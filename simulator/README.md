@@ -27,7 +27,7 @@ python tkgpio_designer.py
 * Deseleccionar: Dando clic al botón ```ESC``` en su teclado.
 6. Cuando selecciona un componente en el espacio de trabajo, es posible editar algunas de sus propiedades, principalmente el pinout del elemento. Esto se realiza mediante las propiedades del componente que aparecen en la parte de la derecha de la ventana. Si las modifica, hay que dar clic al botón ```Aplicar``` para aplicar los cambios.
 7. Una vez que ya creo y configuro su esquemático, podra realizar dos acciones principales:
-  1. Exportar a .json, el cual contiene las conexiones y configuraciones de los pines de la raspberry pi
+  1. Exportar a .json, el cual contiene las conexiones y configuraciones de los pines de la raspberry pi. Importelo si quiere conservar el diagrama para posteriormente modificarlo en esta herramienta.
   2. Exportar a .py, el cual contiene el código básico para ejecutar la simulación desde python.
   
 # tkgpio
