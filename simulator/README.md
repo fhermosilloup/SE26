@@ -7,7 +7,7 @@ Para la simulación se cuenta con dos herramientas escenciales:
 ## Instalación
 1. Desde el entorno virtual de python, instalar la biblioteca tkgpio
 ```batch
-pip install 'tkgpio[sound]'
+pip install tkgpio[sound]
 ```
 
 
