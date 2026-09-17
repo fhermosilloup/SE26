@@ -53,8 +53,27 @@ class LD2420(RadarUARTBase):
     DEBUG_HEADER = b"\xAA\xBF\x10\x14"
     DEBUG_FOOTER = b"\xFD\xFC\xFB\xFA"
 
-    def __init__(self, uart, *, debug=False, frame_timeout=1.0):
+    def __init__(self, uart, *, debug=False, frame_timeout=1.0, presence_pin: Optional[int] = None, bounce_time: float = 0.01):
         super().__init__(uart, debug=debug, frame_timeout=frame_timeout)
+        
+        self._presence_input = None
+        self._when_presence_detected: Optional[Callable[[], None]] = None
+        self._when_presence_cleared: Optional[Callable[[], None]] = None
+
+        if presence_pin is not None:
+            try:
+                from gpiozero import DigitalInputDevice
+            except ImportError as exc:
+                raise ImportError(
+                    "presence_pin requiere gpiozero: pip install gpiozero"
+                ) from exc
+
+            self._presence_input = DigitalInputDevice(
+                presence_pin,
+                pull_up=False,
+                bounce_time=bounce_time,
+            )
+            
         self.mode = LD2420Mode.RUN
 
     def enable_command_mode(self):
@@ -222,3 +241,57 @@ class LD2420(RadarUARTBase):
         if self.mode == LD2420Mode.REPORT:
             return self.read_report()
         return self.read_debug_map()
+        
+    
+    
+    @property
+    def gpio_presence(self) -> Optional[bool]:
+        """Current IO/OT state, or None when no presence_pin was configured."""
+        if self._presence_input is None:
+            return None
+        return bool(self._presence_input.is_active)
+
+    @property
+    def presence_pin(self) -> Optional[int]:
+        if self._presence_input is None:
+            return None
+        return int(self._presence_input.pin.number)
+    @presence_pin.setter
+    def presence_pin(self, num):
+        if self._presence_input is None:
+            if num is not None:
+                try:
+                    from gpiozero import DigitalInputDevice
+                except ImportError as exc:
+                    raise ImportError("presence_pin requiere gpiozero: pip install gpiozero") from exc
+
+                self._presence_input = DigitalInputDevice(num, pull_up=False, bounce_time=bounce_time)
+                self._presence_input.when_activated = None
+                self._presence_input.when_deactivated = None
+    
+
+    @property
+    def when_presence_detected(self) -> Optional[Callable[[], None]]:
+        return self._when_presence_detected
+
+    @when_presence_detected.setter
+    def when_presence_detected(self, callback: Optional[Callable[[], None]]):
+        if self._presence_input is None:
+            raise TypeError("presence_pin no se ha asignado")
+        if callback is not None and not callable(callback):
+            raise TypeError("when_presence_detected debe ser callable o None")
+        self._when_presence_detected = callback
+        self._presence_input.when_activated = self._when_presence_detected
+
+    @property
+    def when_presence_cleared(self) -> Optional[Callable[[], None]]:
+        return self._when_presence_cleared
+
+    @when_presence_cleared.setter
+    def when_presence_cleared(self, callback: Optional[Callable[[], None]]):
+        if self._presence_input is None:
+            raise TypeError("presence_pin no se ha asignado")
+        if callback is not None and not callable(callback):
+            raise TypeError("when_presence_cleared debe ser callable o None")
+        self._when_presence_cleared = callback
+        self._presence_input.when_deactivated = self._when_presence_cleared
