@@ -424,7 +424,7 @@ class LD2402(RadarUARTBase):
     
     
     
-    def calibrate(self)
+    def calibrate(self):
         print("Calibración LD2402")
         print("WARNING!")
         print("Asegurese de que el radar no tenga ningun objetivo detectable durante la calibración.")
