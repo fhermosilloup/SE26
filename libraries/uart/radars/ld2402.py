@@ -23,6 +23,7 @@ from math import log10
 from typing import Callable, Iterable, List, Optional, Sequence, Tuple, Union
 
 from .base import RadarProtocolError, RadarUARTBase
+import time
 
 
 class LD2402Command(IntEnum):
@@ -180,7 +181,6 @@ class LD2402DetectionState(IntEnum):
 
 class LD2402PowerInterference(IntEnum):
     """Read-only value of parameter 0x0005."""
-
     NOT_TESTED = 0
     NO_INTERFERENCE = 1
     INTERFERENCE = 2
@@ -294,13 +294,6 @@ class LD2402Report:
     energy: List[int]
 
     @property
-    def state(self) -> LD2402DetectionState:
-        try:
-            return LD2402DetectionState(self.result)
-        except ValueError:
-            return LD2402DetectionState.NONE
-
-    @property
     def presence(self) -> bool:
         return self.result != LD2402DetectionState.NONE
 
@@ -317,16 +310,16 @@ class LD2402Report:
         return self.energy[16:32]
 
     @staticmethod
-    def _db(values: Sequence[int]) -> List[float]:
+    def _to_db(values: Sequence[int]) -> List[float]:
         return [float("-inf") if value <= 0 else 10.0 * log10(value) for value in values]
 
     @property
     def motion_energy_db(self) -> List[float]:
-        return self._db(self.motion_energy)
+        return self._to_db(self.motion_energy)
 
     @property
     def micro_energy_db(self) -> List[float]:
-        return self._db(self.micro_energy)
+        return self._to_db(self.micro_energy)
 
 
 class LD2402(RadarUARTBase):
@@ -376,7 +369,7 @@ class LD2402(RadarUARTBase):
         debug: bool = False,
         frame_timeout: float = 1.0,
         presence_pin: Optional[int] = None,
-        bounce_time: float = 0.03,
+        bounce_time: float = 0.03
     ):
         super().__init__(uart, debug=debug, frame_timeout=frame_timeout)
         self._mode = LD2402Mode.NORMAL
@@ -401,13 +394,8 @@ class LD2402(RadarUARTBase):
                 pull_up=False,
                 bounce_time=bounce_time,
             )
-            self._presence_input.when_activated = self._gpio_presence_detected
-            self._presence_input.when_deactivated = self._gpio_presence_cleared
 
-    # ------------------------------------------------------------------
     # Configuration session
-    # ------------------------------------------------------------------
-
     def enable_command_mode(self) -> LD2402ConfigurationInfo:
         """Enter configuration mode (command 0x00FF)."""
         response = self._require_success(
@@ -433,6 +421,51 @@ class LD2402(RadarUARTBase):
         )
         self._configuration_enabled = False
         return response
+    
+    
+    
+    def calibrate(self)
+        print("Calibración LD2402")
+        print("WARNING!")
+        print("Asegurese de que el radar no tenga ningun objetivo detectable durante la calibración.")
+        print("Despues de aceptar la calibración, tendra 20 segundos para alejarse del sensor.")
+        sel=input("Desea continuar (y/n)?")
+        if sel=="y":
+            sleep(20)
+        else:
+            return
+        
+        print("1. Gain calibración")
+        self.automatic_gain_adjustment(wait=True)
+        
+        print("2. Threshold calibración")
+            
+        radar.generate_thresholds(
+            trigger=5.0,
+            hold=3.0,
+            micro=3.0,
+        )
+
+        while True:
+            progress = self.threshold_generation_progress
+            print(f"Calibración: {progress}%")
+
+            if progress >= 99:
+                break
+            time.sleep(1)
+        
+        time.sleep(3)
+        print("Calibración: 100%")
+
+        info = self.threshold_generation_interference
+        if info.interference:
+            print("Se detectó interferencia")
+            print("Gates afectados:", info.gates)
+        else:
+            print("Calibración sin interferencias")
+            self.save_parameters()
+        
+        
 
     @contextmanager
     def configuration(self):
@@ -453,9 +486,9 @@ class LD2402(RadarUARTBase):
         """Information returned by the last 0x00FF command."""
         return self._last_configuration_info
 
-    # ------------------------------------------------------------------
+    
     # Generic low-level parameter access
-    # ------------------------------------------------------------------
+    
 
     def get_parameters(self, *parameters: Union[int, LD2402Parameter]):
         """Read arbitrary parameter IDs; use high-level properties when possible."""
@@ -503,9 +536,9 @@ class LD2402(RadarUARTBase):
     def _set_parameter(self, parameter: Union[int, LD2402Parameter], value: int):
         return self.set_parameters({parameter: value})
 
-    # ------------------------------------------------------------------
+    
     # Device-information properties
-    # ------------------------------------------------------------------
+    
 
     @property
     def firmware_version(self):
@@ -581,9 +614,9 @@ class LD2402(RadarUARTBase):
             raise RadarProtocolError("Longitud declarada mayor que la respuesta")
         return bytes(data[2 : 2 + length])
 
-    # ------------------------------------------------------------------
+    
     # Scalar configuration properties
-    # ------------------------------------------------------------------
+    
 
     @property
     def maximum_distance_m(self) -> float:
@@ -618,9 +651,9 @@ class LD2402(RadarUARTBase):
         except ValueError:
             return raw
 
-    # ------------------------------------------------------------------
+    
     # Output mode property
-    # ------------------------------------------------------------------
+    
 
     @property
     def mode(self) -> LD2402Mode:
@@ -653,9 +686,9 @@ class LD2402(RadarUARTBase):
         self.mode = mode
         return self.mode
 
-    # ------------------------------------------------------------------
+    
     # Threshold properties
-    # ------------------------------------------------------------------
+    
 
     @staticmethod
     def _threshold_db_to_raw(value_db: float) -> int:
@@ -760,9 +793,9 @@ class LD2402(RadarUARTBase):
     def set_trigger_thresholds(self, values):
         self.trigger_thresholds_raw = values
 
-    # ------------------------------------------------------------------
+    
     # Automatic threshold generation
-    # ------------------------------------------------------------------
+    
 
     @staticmethod
     def _encode_coefficient(value: float) -> int:
@@ -837,9 +870,9 @@ class LD2402(RadarUARTBase):
         gate_mask = self._from_u16(response.data[:2])
         return LD2402ThresholdInterference(bool(status), gate_mask)
 
-    # ------------------------------------------------------------------
+    
     # Save / gain / legacy actions
-    # ------------------------------------------------------------------
+    
 
     def save_parameters(self):
         """Persist configuration to nonvolatile storage; firmware >= 3.3.2."""
@@ -891,10 +924,7 @@ class LD2402(RadarUARTBase):
                 "restart",
             )
 
-    # ------------------------------------------------------------------
     # REPORT / NORMAL data reading
-    # ------------------------------------------------------------------
-
     def read_report(self) -> LD2402Report:
         """Read one 131-byte engineering report."""
         self._wait_for_header(self.REPORT_HEADER)
@@ -937,17 +967,6 @@ class LD2402(RadarUARTBase):
             return self.read_report()
         return self.read_debug()
 
-    # ------------------------------------------------------------------
-    # Optional IO/OT GPIO event integration with gpiozero
-    # ------------------------------------------------------------------
-
-    def _gpio_presence_detected(self, _device=None):
-        if self._when_presence_detected is not None:
-            self._when_presence_detected()
-
-    def _gpio_presence_cleared(self, _device=None):
-        if self._when_presence_cleared is not None:
-            self._when_presence_cleared()
 
     @property
     def gpio_presence(self) -> Optional[bool]:
@@ -961,6 +980,19 @@ class LD2402(RadarUARTBase):
         if self._presence_input is None:
             return None
         return int(self._presence_input.pin.number)
+    @presence_pin.setter
+    def presence_pin(self, num):
+        if self._presence_input is None:
+            if num is not None:
+                try:
+                    from gpiozero import DigitalInputDevice
+                except ImportError as exc:
+                    raise ImportError("presence_pin requiere gpiozero: pip install gpiozero") from exc
+
+                self._presence_input = DigitalInputDevice(num, pull_up=False, bounce_time=bounce_time)
+                self._presence_input.when_activated = None
+                self._presence_input.when_deactivated = None
+    
 
     @property
     def when_presence_detected(self) -> Optional[Callable[[], None]]:
@@ -968,9 +1000,12 @@ class LD2402(RadarUARTBase):
 
     @when_presence_detected.setter
     def when_presence_detected(self, callback: Optional[Callable[[], None]]):
+        if self._presence_input is None:
+            raise TypeError("presence_pin no se ha asignado")
         if callback is not None and not callable(callback):
             raise TypeError("when_presence_detected debe ser callable o None")
         self._when_presence_detected = callback
+        self._presence_input.when_activated = self._when_presence_detected
 
     @property
     def when_presence_cleared(self) -> Optional[Callable[[], None]]:
@@ -978,9 +1013,12 @@ class LD2402(RadarUARTBase):
 
     @when_presence_cleared.setter
     def when_presence_cleared(self, callback: Optional[Callable[[], None]]):
+        if self._presence_input is None:
+            raise TypeError("presence_pin no se ha asignado")
         if callback is not None and not callable(callback):
             raise TypeError("when_presence_cleared debe ser callable o None")
         self._when_presence_cleared = callback
+        self._presence_input.when_deactivated = self._when_presence_cleared
 
     def close(self):
         if self._presence_input is not None:
