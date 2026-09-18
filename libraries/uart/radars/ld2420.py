@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 from math import log10
 from typing import Callable, Iterable, List, Optional, Sequence, Tuple, Union
-
+from time import sleep
 from .base import RadarProtocolError, RadarUARTBase
 
 
