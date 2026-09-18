@@ -8,10 +8,6 @@ Protocol notes
 * Engineering/REPORT mode payload: 131 bytes =
   1-byte detection result + 2-byte target distance +
   16 x uint32 motion energies + 16 x uint32 micro-motion energies.
-
-The public API intentionally exposes device attributes as Python properties.
-Commands that represent actions (save, automatic threshold generation,
-automatic gain adjustment, etc.) remain methods.
 """
 
 from __future__ import annotations
