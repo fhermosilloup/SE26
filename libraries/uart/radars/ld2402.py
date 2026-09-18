@@ -431,7 +431,7 @@ class LD2402(RadarUARTBase):
         print("Despues de aceptar la calibración, tendra 20 segundos para alejarse del sensor.")
         sel=input("Desea continuar (y/n)?")
         if sel=="y":
-            sleep(20)
+            time.sleep(20)
         else:
             return
         
