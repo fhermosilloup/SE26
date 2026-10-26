@@ -6,6 +6,7 @@
 #include <std_msgs/msg/float32.h>
 #include <std_msgs/msg/bool.h>
 #include <geometry_msgs/msg/twist.h>
+#include <geometry_msgs/msg/inertia.h>
 
 class MessageWrapper {
 public:
@@ -63,6 +64,10 @@ namespace geometry_msgs {
       void setLinear(float x, float y = 0, float z = 0) { msg_.linear.x = x; msg_.linear.y = y; msg_.linear.z = z; }
       void setAngular(float x, float y = 0, float z = 0) { msg_.angular.x = x; msg_.angular.y = y; msg_.angular.z = z; }
       float getLinearX() const { return msg_.linear.x; }
+      float getLinearY() const { return msg_.linear.y; }
+      float getLinearZ() const { return msg_.linear.z; }
+      float getAngularX() const { return msg_.angular.x; }
+      float getAngularY() const { return msg_.angular.y; }
       float getAngularZ() const { return msg_.angular.z; }
       const rosidl_message_type_support_t* getTypeSupport() override { return ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist); }
       void* getRaw() override { return &msg_; }
