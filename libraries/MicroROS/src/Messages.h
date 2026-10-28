@@ -238,10 +238,30 @@ public:
 
   bool isInitialized() const { return initialized_; }
 
+    void setStamp(int32_t sec, uint32_t nanosec) {
+    if (!initialized_) return;
+  
+    msg_.header.stamp.sec = sec;
+    msg_.header.stamp.nanosec = nanosec;
+  }
+
   bool setFrameId(const char* frame_id) {
     if (!initialized_ || frame_id == nullptr) return false;
   
-    return rosidl_runtime_c__String__assign(&msg_.header.frame_id, frame_id);
+    return rosidl_runtime_c__String__assign(
+        &msg_.header.frame_id, frame_id);
+  }
+  
+  int32_t getStampSec() const {
+    return msg_.header.stamp.sec;
+  }
+  
+  uint32_t getStampNanosec() const {
+    return msg_.header.stamp.nanosec;
+  }
+  
+  const char* getFrameId() const {
+    return msg_.header.frame_id.data;
   }
 
   void setOrientation(double x, double y, double z, double w) {
