@@ -238,6 +238,12 @@ public:
 
   bool isInitialized() const { return initialized_; }
 
+  bool setFrameId(const char* frame_id) {
+    if (!initialized_ || frame_id == nullptr) return false;
+  
+    return rosidl_runtime_c__String__assign(&msg_.header.frame_id, frame_id);
+  }
+
   void setOrientation(double x, double y, double z, double w) {
     msg_.orientation.x = x;
     msg_.orientation.y = y;
