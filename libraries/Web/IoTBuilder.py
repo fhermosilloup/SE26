@@ -20,17 +20,33 @@ CUSTOM_WIDGETS_DIR = "custom_widgets"
 
 THEMES = {
     "light": {
-        "bg": "#f8fafc", "panel": "#ffffff", "fg": "#1e293b", 
-        "border": "#cbd5e1", "accent": "#2563eb", "canvas": "#ffffff"
+        "bg": "#f8fafc",
+        "panel": "#ffffff",
+        "fg": "#1e293b",
+        "border": "#cbd5e1",
+        "accent": "#2563eb",
+        "canvas": "#ffffff",
+        "select": "#f59e0b",  # Fucsia/Púrpura vibrante (destaca perfecto sobre blanco y gráficos azules)
+        
     },
     "dark": {
-        "bg": "#0f172a", "panel": "#1e293b", "fg": "#f8fafc", 
-        "border": "#334155", "accent": "#3b82f6", "canvas": "#090d16"
+        "bg": "#121212",
+        "panel": "#1e1e1e",
+        "fg": "#e1e4e8",
+        "border": "#2d2d2d",
+        "accent": "#38bdf8",
+        "canvas": "#09090b",
+        "select": "#f59e0b",  # Naranja ámbar original para modo oscuro
     },
     "wii": {
-        "bg": "#e2e8f0", "panel": "#ffffff", "fg": "#334155", 
-        "border": "#cbd5e1", "accent": "#00a0e9", "canvas": "#f1f5f9"
-    }
+        "bg": "#e2e8f0",
+        "panel": "#ffffff",
+        "fg": "#334155",
+        "border": "#cbd5e1",
+        "accent": "#00a0e9",
+        "canvas": "#f1f5f9",
+        "select": "#9333ea",  # Morado brillante ideal para el estilo Wii
+    },
 }
 
 WIDGET_EVENTS_MAP = {
@@ -50,10 +66,13 @@ WIDGET_EVENTS_MAP = {
     "Compass": ["on_update"],
     "SevenSegment": ["on_update"],
     "ProgressBar": ["on_update"],
-    "Plot": ["on_update"]
+    "Plot": ["on_update"],
+    "UDPStream": ["on_video_click"]
 }
 
 APP_PY = r'''
+#import eventlet
+#eventlet.monkey_patch()
 import os, json, traceback, importlib.util
 from flask import Flask, render_template
 from flask_socketio import SocketIO
@@ -67,7 +86,8 @@ print(f'[app] version={APP_VERSION} dir={BASE_DIR}')
 app = Flask(__name__, template_folder=os.path.join(BASE_DIR, 'templates'),
             static_folder=os.path.join(BASE_DIR, 'static'))
 app.config['SECRET_KEY'] = 'iot_secret'
-socketio = SocketIO(app, cors_allowed_origins='*')
+#socketio = SocketIO(app, cors_allowed_origins='*')
+socketio = SocketIO(app, async_mode="threading")
 
 event_handlers = {}
 _running = set()
@@ -96,7 +116,6 @@ class UIProxy:
         self.sio.emit('update', {'id': widget_id, 'value': value})
         dispatch(widget_id, 'on_update', value)
     
-    # <-- NUEVO MÉTODO
     def on(self, widget_id, event, callback=None):
         def decorator(fn):
             key = (widget_id, event)
@@ -112,6 +131,61 @@ class UIProxy:
 
 
 ui_proxy = UIProxy(socketio)
+
+
+
+def load_backend_plugins():
+    """Carga hooks de backend de los plugins usados en project.json."""
+    try:
+        with open(PROJECT_FILE, 'r', encoding='utf-8') as f:
+            project_data = json.load(f)
+    except Exception:
+        print('[plugins] No se pudo leer project.json')
+        traceback.print_exc()
+        return
+
+    plugin_dir = os.path.join(BASE_DIR, 'custom_widgets')
+    if not os.path.isdir(plugin_dir):
+        return
+
+    used_types = sorted({
+        str(w.get('type', '')).strip()
+        for w in project_data.get('widgets', [])
+        if w.get('type')
+    })
+
+    for widget_type in used_types:
+        plugin_file = None
+        for filename in os.listdir(plugin_dir):
+            if filename.lower() == (widget_type + '.py').lower():
+                plugin_file = os.path.join(plugin_dir, filename)
+                break
+        if not plugin_file:
+            continue
+
+        try:
+            module_name = 'backend_plugin_' + widget_type.replace('-', '_')
+            spec = importlib.util.spec_from_file_location(module_name, plugin_file)
+            if not spec or not spec.loader:
+                continue
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+
+            plugin_class = getattr(module, widget_type, None)
+            if plugin_class is None:
+                for attr_name in dir(module):
+                    candidate = getattr(module, attr_name)
+                    if isinstance(candidate, type) and attr_name.lower() == widget_type.lower():
+                        plugin_class = candidate
+                        break
+
+            register = getattr(plugin_class, 'register_backend', None)
+            if callable(register):
+                print('[plugins] backend hook:', widget_type)
+                register(app, socketio, project_data)
+        except Exception:
+            print('[plugins] ERROR cargando backend de', widget_type)
+            traceback.print_exc()
 
 
 def load_handlers():
@@ -181,10 +255,10 @@ def handle_client_event(data):
 
 
 load_handlers()
+load_backend_plugins()
 
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=5000, debug=True,
-                 use_reloader=False, allow_unsafe_werkzeug=True)
+    socketio.run(app, host='0.0.0.0', port=5000, debug=True, use_reloader=False, allow_unsafe_werkzeug=True)
 '''
 
 PROP_VARS = [
@@ -196,6 +270,161 @@ PROP_VARS = [
     "map_zoom", "compass_heading", "knob_value", "prog_value", "tab_names",
 ]
 
+
+
+
+class SlideButton(tk.Canvas):
+    def __init__(self, master, variable=None, command=None, width=75, height=28, **kwargs):
+        super().__init__(master, width=width, height=height, highlightthickness=0, bd=0, **kwargs)
+        self.variable = variable
+        self.command = command
+        self.w_val = width
+        self.h_val = height
+        self.configure(bg=master.cget("bg"))
+        
+        # Determinar estado inicial
+        if self.variable:
+            val = self.variable.get()
+            self.is_on = True if val in [True, "True", "true", "TRUE", 1, "1"] else False
+            self.variable.trace_add("write", self._on_var_change)
+        else:
+            self.is_on = False
+            
+        # Vincular el clic directamente al canvas
+        self.bind("<Button-1>", self.toggle)
+        self.draw()
+
+    def _on_var_change(self, *args):
+        if not self.variable:
+            return
+        val = self.variable.get()
+        new_state = True if val in [True, "True", "true", "TRUE", 1, "1"] else False
+        if new_state != self.is_on:
+            self.is_on = new_state
+            self.draw()
+
+    def toggle(self, event=None):
+        self.is_on = not self.is_on
+        if self.variable:
+            # Forzar el texto exacto que esperan los widgets custom ("True" o "False")
+            val_str = "True" if self.is_on else "False"
+            self.variable.set(val_str)
+        
+        # Redibujar el botón gráficamente al instante
+        self.draw()
+        
+        # Ejecutar la actualización de la app para que w.props recoja el nuevo valor
+        if self.command:
+            try:
+                self.command()
+            except TypeError:
+                try:
+                    self.command(None)
+                except Exception:
+                    pass
+
+    def draw(self):
+        self.delete("all")
+        w = self.w_val
+        h = self.h_val
+        
+        # Colores según el estado actual
+        bg_color = "#10b981" if self.is_on else "#334155"
+        knob_color = "#ffffff"
+        
+        # Dibujar contenedor redondeado
+        self.create_rounded_rect(2, 2, w-2, h-2, radius=h-4, fill=bg_color, outline="")
+        
+        # Dibujar elementos internos según el estado
+        if self.is_on:
+            self.create_text(23, h/2, text="True", fill="#ffffff", font=("Segoe UI", 8, "bold"))
+            self.create_oval(w - h + 2, 4, w - 6, h - 4, fill=knob_color, outline="")
+        else:
+            self.create_oval(4, 4, h - 2, h - 4, fill=knob_color, outline="")
+            self.create_text(w - 23, h/2, text="False", fill="#ffffff", font=("Segoe UI", 8, "bold"))
+
+    def create_rounded_rect(self, x1, y1, x2, y2, radius=25, **kwargs):
+        points = [
+            x1 + radius, y1,
+            x2 - radius, y1,
+            x2, y1,
+            x2, y1 + radius,
+            x2, y2 - radius,
+            x2, y2,
+            x2 - radius, y2,
+            x1 + radius, y2,
+            x1, y2,
+            x1, y2 - radius,
+            x1, y1 + radius,
+            x1, y1
+        ]
+        return self.create_polygon(points, smooth=True, **kwargs)
+        
+import tkinter as tk
+from tkinter import ttk
+
+class ScrollablePropContainer(tk.Frame):
+    def __init__(self, parent, bg="#1e293b", **kwargs):
+        super().__init__(parent, bg=bg, **kwargs)
+        
+        # Canvas principal
+        self.canvas = tk.Canvas(self, bg=bg, highlightthickness=0, borderwidth=0)
+        self.scrollbar = ttk.Scrollbar(self, orient="vertical", command=self.canvas.yview)
+        
+        # Frame interno donde se empaquetarán todos los campos de propiedades
+        self.inner_frame = tk.Frame(self.canvas, bg=bg)
+        
+        self.inner_frame.bind(
+            "<Configure>",
+            lambda e: self.canvas.configure(
+                scrollregion=self.canvas.bbox("all")
+            )
+        )
+        
+        # Crear la ventana dentro del canvas
+        self.canvas_window = self.canvas.create_window((0, 0), window=self.inner_frame, anchor="nw")
+        
+        # Asegurar que el frame interno escale con el ancho del panel
+        self.canvas.bind('<Configure>', lambda event: self.canvas.itemconfig(self.canvas_window, width=event.width))
+        
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        
+        # Posicionamiento en la interfaz
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.scrollbar.pack(side="right", fill="y")
+        
+        # Activar el scroll con la rueda del ratón (MouseWheel)
+        self._bind_mouse_wheel(self.inner_frame)
+
+    def _bind_mouse_wheel(self, widget):
+        widget.bind("<MouseWheel>", self._on_mouse_wheel, add="+")
+        for child in widget.winfo_children():
+            self._bind_mouse_wheel(child)
+
+    def _on_mouse_wheel(self, event):
+        # Soporte multiplataforma para el desplazamiento de la rueda del ratón
+        if event.delta:
+            self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        else:
+            # Para Linux (Button-4 y Button-5)
+            if event.num == 4:
+                self.canvas.yview_scroll(-1, "units")
+            elif event.num == 5:
+                self.canvas.yview_scroll(1, "units")
+
+    def clear(self):
+        """Limpia todos los widgets hijos del contenedor interno."""
+        for widget in self.inner_frame.winfo_children():
+            widget.destroy()
+            
+            
+            
+            
+            
+            
+            
+            
+            
 class WidgetItem:
     def __init__(self, wid, wtype, x, y):
         self.id = wid
@@ -295,22 +524,155 @@ class IoTBuilderApp:
         self.setup_ui()
         self.apply_theme()
         
+        
+        # Shortcuts
         self.root.bind_all("<Control-s>", lambda e: self.save_project())
+        self.root.bind_all("<Control-g>", lambda e: self.save_project())
         self.root.bind_all("<Control-o>", lambda e: self.load_project())
+        self.root.bind_all("<Control-a>", lambda e: self.load_project())
         self.root.bind_all("<Control-e>", lambda e: self.export_flask_project())
         self.root.bind_all("<Control-z>", lambda e: self.undo_action())
         self.root.bind_all("<Control-y>", lambda e: self.redo_action())
+        self.root.bind_all("<Delete>", lambda e: self.safe_delete_selection())
+        self.root.bind_all("<BackSpace>", lambda e: self.safe_delete_selection())
+        self.root.bind_all("<Up>", self.navigate_widgets)
+        self.root.bind_all("<Down>", self.navigate_widgets)
+        self.root.bind_all("<Left>", self.navigate_widgets)
+        self.root.bind_all("<Right>", self.navigate_widgets)
         
+        self.unsaved_changes = False
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+    
+    def on_close(self):
+        if self.unsaved_changes:
+            res = messagebox.askyesnocancel(
+                "Guardar cambios",
+                "Tienes cambios sin guardar. ¿Deseas guardarlos antes de salir?",
+                parent=self.root
+            )
+            if res is True:  # Sí: intenta guardar y luego cierra
+                # Llama a tu función de guardado (ej. self.save_project() o self.save_file())
+                # Asegúrate de que esta función devuelva True si se guardó con éxito o maneje el archivo
+                self.save_project() 
+                self.root.destroy()
+            elif res is False:  # No: cierra directamente sin guardar
+                self.root.destroy()
+            # Si es Cancelar (None), la aplicación no hace nada y se mantiene abierta
+        else:
+            self.root.destroy()
+    
+    def safe_delete_selection(self, event=None):
+        # Ignora si son elementos del ui
+        try:
+            focused = self.root.focus_get()
+            if isinstance(focused, (tk.Entry, ttk.Entry, tk.Text, ttk.Combobox)):
+                return
+        except Exception:
+            return
+            
+        self.delete_selection()
+    
+    def scroll_to_widget(self, w):
+        """Desplaza automáticamente el canvas para hacer visible el widget w si está fuera de la vista."""
+        canvas_h = self.canvas.winfo_height()
+        canvas_w = self.canvas.winfo_width()
+        total_h = 3000.0  # Coincide con el scrollregion=(0, 0, 3000, 3000) del canvas
+        total_w = 3000.0
+
+        y_view = self.canvas.yview()
+        x_view = self.canvas.xview()
+
+        current_top_y = y_view[0] * total_h
+        current_bottom_y = y_view[1] * total_h
+
+        current_left_x = x_view[0] * total_w
+        current_right_x = x_view[1] * total_w
+
+        margin = 40  # Margen de seguridad en píxeles
+
+        # Verificación vertical
+        target_y_fraction = None
+        if w.y < current_top_y + margin:
+            target_y_fraction = max(0.0, (w.y - margin) / total_h)
+        elif w.y + w.height > current_bottom_y - margin:
+            target_y_fraction = max(0.0, (w.y + w.height + margin - canvas_h) / total_h)
+
+        if target_y_fraction is not None:
+            self.canvas.yview_moveto(target_y_fraction)
+
+        # Verificación horizontal
+        target_x_fraction = None
+        if w.x < current_left_x + margin:
+            target_x_fraction = max(0.0, (w.x - margin) / total_w)
+        elif w.x + w.width > current_right_x - margin:
+            target_x_fraction = max(0.0, (w.x + w.width + margin - canvas_w) / total_w)
+
+        if target_x_fraction is not None:
+            self.canvas.xview_moveto(target_x_fraction)
+            
+    def navigate_widgets(self, event):
+        try:
+            focused = self.root.focus_get()
+            # Añadimos tk.Listbox para que si la lista tiene el foco, las flechas funcionen en ella
+            if isinstance(focused, (tk.Entry, ttk.Entry, tk.Text, ttk.Combobox, tk.Listbox)):
+                return
+        except Exception:
+            return
+
+        # Si no hay widget seleccionado o solo hay uno, no hace nada
+        if not self.selected or len(self.widgets) <= 1:
+            return
+
+        curr = self.selected
+        curr_cx = curr.x + curr.width / 2
+        curr_cy = curr.y + curr.height / 2
+
+        direction = event.keysym  # 'Up', 'Down', 'Left', 'Right'
+        best_candidate = None
+        min_score = float("inf")
+
+        for w in self.widgets:
+            if w.id == curr.id:
+                continue
+
+            w_cx = w.x + w.width / 2
+            w_cy = w.y + w.height / 2
+
+            dx = w_cx - curr_cx
+            dy = w_cy - curr_cy
+
+            # Filtra por dirección y calcula la puntuación ponderada
+            # (se le da doble peso al eje secundario para favorecer alineación directa)
+            if direction == "Up" and dy < -5:
+                score = abs(dy) + 2.0 * abs(dx)
+            elif direction == "Down" and dy > 5:
+                score = abs(dy) + 2.0 * abs(dx)
+            elif direction == "Left" and dx < -5:
+                score = abs(dx) + 2.0 * abs(dy)
+            elif direction == "Right" and dx > 5:
+                score = abs(dx) + 2.0 * abs(dy)
+            else:
+                continue
+
+            if score < min_score:
+                min_score = score
+                best_candidate = w
+
+        # Selecciona el candidato más cercano en esa dirección
+        if best_candidate:
+            self.selected_widgets = [best_candidate]
+            self.select_widget(best_candidate)
+            self.scroll_to_widget(best_candidate)
+    
     def remove_event_function(self, wid, ev):
         code = self.widget_event_codes.get(wid)
         if code is None:
             return
-        # Borra "def ev(...)" hasta la siguiente "def " de primer nivel o el final
         code = re.sub(rf"^def {re.escape(ev)}\(.*?(?=^def |\Z)", "", code, flags=re.S | re.M)
         if re.search(r"^def \w+\(", code, flags=re.M):
             self.widget_event_codes[wid] = code.rstrip() + "\n"
         else:
-            del self.widget_event_codes[wid]   # ya no quedan funciones: se elimina el archivo
+            del self.widget_event_codes[wid]
     
     
     def event_template(self, ev):
@@ -319,7 +681,8 @@ class IoTBuilderApp:
             f"    widget_id = context.get('widget_id')\n"
             f"    value = context.get('value')\n"
             f"    ui = context.get('ui')\n"
-            f"    # Ej: ui.set_property('label_0', 'label', 'Texto nuevo')\n"
+            f"    # Ej Modify Properties: ui.set_property('label_0', 'label', 'Texto nuevo')\n"
+            f"    # Ej Set Values: ui.set_value('led_0', True)\n"
             f"    print('Evento {ev} de ' + str(widget_id) + ' valor: ' + str(value))\n"
         )
 
@@ -370,8 +733,41 @@ class IoTBuilderApp:
         self.refresh_scripts_list()
         
     def sync_vars_from_widget(self, w):
-        for p in PROP_VARS:
-            getattr(self, f"var_{p}").set(getattr(w, p))
+        if not w:
+            return
+            
+        # Lista de propiedades estándar que intentamos sincronizar con las variables de la UI
+        # Puedes adaptar o añadir los nombres de variables que maneje tu inspector
+        standard_props = ['label', 'color', 'clock_type', 'gauge_model', 'btn_style', 
+                          'led_style', 'seg_digits', 'seg_color', 'toggle_on_text', 
+                          'toggle_off_text', 'toggle_on_color', 'toggle_off_color', 
+                          'label_bg_color', 'label_fg_color', 'label_shape', 
+                          'keyboard_rows', 'plot_grid', 'plot_legend', 'plot_xlabel', 
+                          'plot_ylabel', 'map_lat', 'map_lng', 'map_zoom', 
+                          'compass_heading', 'knob_value', 'prog_value', 'tab_names']
+
+        for p in standard_props:
+            var_name = f"var_{p}"
+            if hasattr(self, var_name):
+                ui_var = getattr(self, var_name)
+                
+                # 1. Intentar obtener el valor del atributo directo del widget
+                val = getattr(w, p, None)
+                
+                # 2. Si no lo tiene directamente, buscar en w.props
+                if val is None and hasattr(w, 'props') and isinstance(w.props, dict):
+                    val = w.props.get(p, None)
+                    
+                # 3. Si aún no existe, buscar en default_props de la clase del widget
+                if val is None and hasattr(w, 'default_props') and isinstance(w.default_props, dict):
+                    val = w.default_props.get(p, "")
+                
+                # Asignar a la variable de Tkinter de forma segura si encontramos un valor
+                if val is not None:
+                    try:
+                        ui_var.set(val)
+                    except Exception:
+                        pass
 
     def sync_widget_from_vars(self, w):
         for p in PROP_VARS:
@@ -403,20 +799,20 @@ class IoTBuilderApp:
                         attr = getattr(mod, attr_name)
                         if isinstance(attr, type) and attr_name.lower() == module_name.lower():
                             widget_class = attr
-                            print("Widget.name=",widget_class.__name__)
-                            # 1. Definir o recuperar propiedades por defecto desde la clase del plugin
+                            # print("Widget.name=",widget_class.__name__)
+                            # Definir o recuperar propiedades por defecto desde la clase del plugin
                             # Si el plugin define un atributo de clase 'default_props', lo usamos; si no, creamos uno base.
                             if not hasattr(widget_class, 'default_props'):
                                 widget_class.default_props = {"label": widget_class.__name__}
-                            else:
-                                print("Widget.props: ", widget_class.default_props)
+                            # else:
+                                # print("Widget.props: ", widget_class.default_props)
                             
                             # 2. Definir o recuperar eventos soportados desde la clase del plugin
                             # Si el plugin define 'supported_events', lo usamos; si no, asignamos por defecto.
                             if not hasattr(widget_class, 'supported_events'):
                                 widget_class.supported_events = ["on_click"]
-                            else:
-                                print("Widget.events: ", widget_class.supported_events)
+                            # else:
+                                # print("Widget.events: ", widget_class.supported_events)
 
                             # Registrar el tipo de widget en el builder
                             w_type_name = widget_class.__name__
@@ -433,11 +829,13 @@ class IoTBuilderApp:
     def save_state(self):
         self.undo_stack.append([copy.deepcopy(w.to_dict()) for w in self.widgets])
         self.redo_stack.clear()
+        self.unsaved_changes = True
 
     def undo_action(self):
         if not self.undo_stack: return
         self.redo_stack.append([copy.deepcopy(w.to_dict()) for w in self.widgets])
         self.load_widgets_from_state(self.undo_stack.pop())
+        self.unsaved_changes = True
 
     def redo_action(self):
         if not self.redo_stack: return
@@ -449,48 +847,66 @@ class IoTBuilderApp:
         self.canvas.delete("all")
         self.widget_counter = 0
         self.selected_widgets.clear()
+        
         for item in state_list:
-            w = WidgetItem(item.get("id", f"w_{self.widget_counter}"), item.get("type", "Button"), item.get("x", 50), item.get("y", 50))
-            w.width = item.get("width", 140)
-            w.height = item.get("height", 50)
-            props = item.get("props", {})
-            w.label = props.get("label", w.type)
-            w.color = props.get("color", w.color)
-            w.clock_type = props.get("clock_type", w.clock_type)
-            w.gauge_model = props.get("gauge_model", w.gauge_model)
-            w.btn_style = props.get("btn_style", w.btn_style)
-            w.led_style = props.get("led_style", w.led_style)
-            w.seg_digits = props.get("seg_digits", w.seg_digits)
-            w.seg_color = props.get("seg_color", w.seg_color)
-            w.toggle_on_text = props.get("toggle_on_text", w.toggle_on_text)
-            w.toggle_off_text = props.get("toggle_off_text", w.toggle_off_text)
-            w.toggle_on_color = props.get("toggle_on_color", w.toggle_on_color)
-            w.toggle_off_color = props.get("toggle_off_color", w.toggle_off_color)
-            w.label_bg_color = props.get("label_bg_color", w.label_bg_color)
-            w.label_fg_color = props.get("label_fg_color", w.label_fg_color)
-            w.label_shape = props.get("label_shape", w.label_shape)
-            w.keyboard_rows = props.get("keyboard_rows", w.keyboard_rows)
-            w.plot_grid = props.get("plot_grid", w.plot_grid)
-            w.plot_legend = props.get("plot_legend", w.plot_legend)
-            w.plot_xlabel = props.get("plot_xlabel", w.plot_xlabel)
-            w.plot_ylabel = props.get("plot_ylabel", w.plot_ylabel)
-            w.map_lat = props.get("map_lat", w.map_lat)
-            w.map_lng = props.get("map_lng", w.map_lng)
-            w.map_zoom = props.get("map_zoom", w.map_zoom)
-            w.compass_heading = props.get("compass_heading", w.compass_heading)
-            w.knob_value = props.get("knob_value", w.knob_value)
-            w.prog_value = props.get("prog_value", w.prog_value)
-            w.tab_names = props.get("tab_names", w.tab_names)
-            w.attached_widgets = props.get("attached_widgets", [])
-            w.events = item.get("events", {})
+            w_type = item.get("type", "Button")
+            w_id = item.get("id", f"w_{self.widget_counter}")
+            
+            # Buscar si es un widget personalizado (plugin)
+            target_cls = None
+            if hasattr(self, 'custom_widget_classes'):
+                for k, cls in self.custom_widget_classes.items():
+                    if k.lower() == w_type.lower():
+                        target_cls = cls
+                        break
+
+            if target_cls:
+                # Es un plugin personalizado: instanciamos y restauramos props
+                w = target_cls()
+                w.id = w_id
+                w.type = w_type
+                w.x = item.get("x", 50)
+                w.y = item.get("y", 50)
+                w.width = item.get("width", getattr(w, 'width', 300))
+                w.height = item.get("height", getattr(w, 'height', 150))
+                
+                saved_props = item.get("props", {})
+                if hasattr(w, 'default_props') and isinstance(w.default_props, dict):
+                    w.props = {**w.default_props, **saved_props}
+                else:
+                    w.props = saved_props
+                
+                w.events = item.get("events", {})
+            else:
+                # Es un widget nativo estándar
+                w = WidgetItem(w_id, w_type, item.get("x", 50), item.get("y", 50))
+                w.width = item.get("width", 140)
+                w.height = item.get("height", 50)
+                
+                props = item.get("props", {})
+                w.props = props
+                w.label = props.get("label", w.type)
+                w.color = props.get("color", w.color)
+                # ... (mantén aquí el resto de asignaciones de propiedades nativas que ya tenías) ...
+                w.events = item.get("events", {})
             
             self.widgets.append(w)
             self.draw_widget(w)
             self.widget_counter += 1
+            
         self.select_widget(None)
         self.refresh_scripts_list()
 
     def setup_ui(self):
+        style = ttk.Style()
+        style.theme_use('clam')  # 'clam' permite mayor personalización de colores en widgets ttk
+        t = THEMES[self.current_theme]
+        # Combobox
+        style.map('TCombobox',  fieldbackground=[('readonly', t["bg"])], selectbackground=[('readonly', t["accent"])], foreground=[('readonly', t["fg"])])
+        style.configure('TCombobox',  fieldbackground=t["bg"],  background=t["panel"],  foreground=t["fg"], arrowcolor=t["accent"])
+        # Barras de desplazamiento (Scrollbars) vertical y horizontal
+        style.configure('TScrollbar', background=t["panel"],  troughcolor=t["bg"],  bordercolor=t["border"],  arrowcolor=t["fg"])
+        
         self.toolbar = tk.Frame(self.root, height=50)
         self.toolbar.pack(side=tk.TOP, fill=tk.X)
         self.lbl_title = tk.Label(self.toolbar, text="IoT Dashboard Builder Pro", font=("Segoe UI", 12, "bold"))
@@ -568,8 +984,10 @@ class IoTBuilderApp:
         self.var_map_lng, self.var_map_zoom, self.var_compass_heading = tk.StringVar(), tk.StringVar(), tk.StringVar()
         self.var_knob_value, self.var_prog_value, self.var_tab_names = tk.StringVar(), tk.StringVar(), tk.StringVar()
 
-        self.prop_container = tk.Frame(self.right_panel)
-        self.prop_container.pack(fill=tk.BOTH, expand=True, padx=10)
+        # Crear el contenedor con scroll en el panel derecho
+        self.prop_scroll = ScrollablePropContainer(self.right_panel)
+        self.prop_scroll.pack(fill=tk.BOTH, expand=True, padx=10)
+        self.prop_container = self.prop_scroll.inner_frame
         self.build_inspector_fields()
 
         self.canvas_container = tk.Frame(self.tab_designer)
@@ -593,27 +1011,181 @@ class IoTBuilderApp:
         self.code_paned = tk.PanedWindow(self.tab_code, orient=tk.HORIZONTAL, bg="#1e1e1e")
         self.code_paned.pack(fill=tk.BOTH, expand=True)
 
-        self.scripts_frame = tk.Frame(self.code_paned, bg="#252526", width=200)
+        self.scripts_frame = tk.Frame(self.code_paned, width=200)
         self.code_paned.add(self.scripts_frame, minsize=150)
 
-        tk.Label(self.scripts_frame, text="Scripts de Eventos Activos", font=("Segoe UI", 9, "bold"), fg="#d4d4d4", bg="#252526").pack(pady=10)
-        self.scripts_listbox = tk.Listbox(self.scripts_frame, bg="#1e1e1e", fg="#38bdf8", font=("Consolas", 10), selectbackground="#37373d", relief=tk.FLAT, highlightthickness=0)
+        # Guarda la referencia en self.lbl_scripts_title
+        self.lbl_scripts_title = tk.Label(self.scripts_frame, text="Scripts de Eventos Activos", font=("Segoe UI", 9, "bold"))
+        self.lbl_scripts_title.pack(pady=10)
+        
+        self.scripts_listbox = tk.Listbox(self.scripts_frame, font=("Consolas", 10), relief=tk.FLAT, highlightthickness=0)
         self.scripts_listbox.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         self.scripts_listbox.bind("<Double-1>", self.load_script_from_list)
 
-        self.editor_frame = tk.Frame(self.code_paned, bg="#1e1e1e")
+        self.editor_frame = tk.Frame(self.code_paned)
         self.code_paned.add(self.editor_frame, stretch="always")
 
-        code_toolbar = tk.Frame(self.editor_frame, height=40, bg="#1e1e1e")
-        code_toolbar.pack(side=tk.TOP, fill=tk.X, padx=10, pady=5)
-        self.lbl_code_title = tk.Label(code_toolbar, text="(Ningun archivo abierto)", font=("Segoe UI", 10, "bold"), fg="#38bdf8", bg="#1e1e1e")
+        # Guarda la referencia en self.code_toolbar
+        self.code_toolbar = tk.Frame(self.editor_frame, height=40)
+        self.code_toolbar.pack(side=tk.TOP, fill=tk.X, padx=10, pady=5)
+        
+        self.lbl_code_title = tk.Label(self.code_toolbar, text="(Ningun archivo abierto)", font=("Segoe UI", 10, "bold"))
         self.lbl_code_title.pack(side=tk.LEFT)
-        tk.Button(code_toolbar, text="Guardar Cambios de Codigo", command=self.save_widget_code_tab, bg="#2563eb", fg="white", font=("Segoe UI", 9, "bold"), relief=tk.FLAT, cursor="hand2").pack(side=tk.RIGHT)
+        
+        tk.Button(self.code_toolbar, text="Guardar Cambios de Codigo", command=self.save_widget_code_tab, bg="#2563eb", fg="white", font=("Segoe UI", 9, "bold"), relief=tk.FLAT, cursor="hand2").pack(side=tk.RIGHT)
 
-        self.code_editor = scrolledtext.ScrolledText(self.editor_frame, wrap=tk.WORD, font=("Consolas", 11), bg="#1e1e1e", fg="#d4d4d4", insertbackground="white", highlightthickness=0)
+        # Configuración del editor de código estilo Python
+        self.code_editor = scrolledtext.ScrolledText(
+            self.editor_frame,
+            wrap=tk.WORD,
+            font=("Consolas", 11),
+            bg="#1e1e1e",
+            fg="#d4d4d4",
+            insertbackground="white",
+            highlightthickness=0,
+        )
         self.code_editor.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         self.code_editor.insert(tk.END, "# Selecciona un archivo en la lista de la izquierda o un widget en el disenador\n")
 
+        # Definir los colores (tags) para la sintaxis de Python
+        self.code_editor.tag_config("keyword", foreground="#c586c0")  # Morado
+        self.code_editor.tag_config("string", foreground="#ce9178")  # Naranja/Marrón
+        self.code_editor.tag_config(
+            "comment", foreground="#6a9955"
+        )  # Verde comentario
+        self.code_editor.tag_config(
+            "number", foreground="#b5cea8"
+        )  # Verde claro números
+
+        # Vincular eventos de escritura, resaltado y auto-tabulación
+        self.code_editor.bind("<KeyRelease>", self.on_code_key_release)
+        self.code_editor.bind("<Return>", self.handle_auto_indent)
+    
+    def mark_unsaved(self, event=None):
+        self.unsaved_changes = True
+    
+    def on_code_key_release(self, event=None):
+        """Marca como no guardado y aplica colorización de sintaxis."""
+        self.mark_unsaved()
+        self.syntax_highlight()
+
+    def syntax_highlight(self, event=None):
+        """Aplica colores a palabras clave, strings, comentarios y números en tiempo real."""
+        # Limpiar etiquetas anteriores
+        for tag in ["keyword", "string", "comment", "number"]:
+            self.code_editor.tag_remove(tag, "1.0", tk.END)
+
+        text_content = self.code_editor.get("1.0", tk.END)
+
+        # Expresiones regulares para tokens de Python
+        patterns = [
+            ("comment", r"#.*"),
+            ("string", r"(\'[^\']*\'|\"[^\"]*\")"),
+            (
+                "keyword",
+                r"\b(def|class|if|elif|else|for|while|return|import|from|as|in|not|and|or|True|False|None|try|except|finally|with|lambda|global|nonlocal|pass|break|continue|raise|assert|del|yield|async|await)\b",
+            ),
+            ("number", r"\b\d+(\.\d+)?\b"),
+        ]
+
+        for tag_name, pattern in patterns:
+            for match in re.finditer(pattern, text_content):
+                start_idx = f"1.0 + {match.start()} chars"
+                end_idx = f"1.0 + {match.end()} chars"
+                self.code_editor.tag_add(tag_name, start_idx, end_idx)
+
+    def handle_auto_indent(self, event):
+        """Maneja la auto-tabulación al presionar Enter, detectando bloques con ':'."""
+        cursor_pos = self.code_editor.index(tk.INSERT)
+        line_num = cursor_pos.split(".")[0]
+        line_start = f"{line_num}.0"
+        current_line = self.code_editor.get(line_start, cursor_pos)
+
+        # Detectar la indentación (espacios o tabs) de la línea actual
+        indent = ""
+        for char in current_line:
+            if char in " \t":
+                indent += char
+            else:
+                break
+
+        # Si la línea termina en dos puntos (:), agregar 4 espacios extra de tabulación
+        if current_line.strip().endswith(":"):
+            indent += "    "
+
+        # Insertar salto de línea seguido de la indentación calculada
+        self.code_editor.insert(tk.INSERT, "\n" + indent)
+
+        # Disparar marcado de cambios y resaltado
+        self.on_code_key_release()
+
+        return "break"  # Previene el comportamiento por defecto de la tecla Enter en Tkinter
+        
+    def refresh_widget_library(self):
+        """Limpia y vuelve a cargar los elementos de la biblioteca lateral."""
+        for child in self.lib_inner.winfo_children():
+            child.destroy()
+
+        categories = {
+            "Controles": [
+                "Button",
+                "ToggleSwitch",
+                "Slider",
+                "CheckBox",
+                "TextBox",
+                "NumberBox",
+                "Keyboard",
+                "Knob",
+            ],
+            "Indicadores": [
+                "LED",
+                "Gauge",
+                "SevenSegment",
+                "StatusBar",
+                "Clock",
+                "Compass",
+                "ProgressBar",
+            ],
+            "Containers": [
+                "VerticalContainer",
+                "HorizontalContainer",
+                "MatrixContainer",
+                "Tabs",
+            ],
+            "Texto y Visualizacion": ["Label"],
+            "Graficas": ["Plot"],
+            "IoT y Sensores": ["Map"],
+            "Plugins": self.custom_widget_types,
+        }
+
+        t = THEMES[self.current_theme]
+        for cat, items in categories.items():
+            if not items:
+                continue
+            lbl = tk.Label(
+                self.lib_inner,
+                text=f"- {cat}",
+                font=("Segoe UI", 9, "bold"),
+                anchor="w",
+                bg=t["panel"],
+                fg=t["accent"],
+            )
+            lbl.pack(fill=tk.X, padx=5, pady=(5, 2))
+            for item in items:
+                b = tk.Button(
+                    self.lib_inner,
+                    text=f"    {item}",
+                    anchor="w",
+                    relief=tk.FLAT,
+                    cursor="hand2",
+                    bg=t["panel"],
+                    fg=t["fg"],
+                    activebackground=t["border"],
+                    activeforeground=t["fg"],
+                )
+                b.pack(fill=tk.X, padx=15, pady=1)
+                b.bind("<Button-1>", lambda e, wtype=item: self.set_pending(wtype))
+    
     def open_new_widget_dialog(self):
         diag = tk.Toplevel(self.root)
         diag.title("Nuevo Widget Personalizado")
@@ -621,47 +1193,110 @@ class IoTBuilderApp:
         diag.config(bg="#1e293b")
         diag.grab_set()
 
-        tk.Label(diag, text="Crear Nuevo Widget Python", font=("Segoe UI", 11, "bold"), fg="white", bg="#1e293b").pack(pady=10)
+        tk.Label(
+            diag,
+            text="Crear Nuevo Widget Python",
+            font=("Segoe UI", 11, "bold"),
+            fg="white",
+            bg="#1e293b",
+        ).pack(pady=10)
         form_frame = tk.Frame(diag, bg="#1e293b")
         form_frame.pack(fill=tk.BOTH, expand=True, padx=20)
 
-        tk.Label(form_frame, text="Nombre del Widget:", fg="#cbd5e1", bg="#1e293b", font=("Segoe UI", 9)).pack(anchor=tk.W)
-        e_name = tk.Entry(form_frame, bg="#334155", fg="white", insertbackground="white", font=("Segoe UI", 10))
+        tk.Label(
+            form_frame,
+            text="Nombre del Widget:",
+            fg="#cbd5e1",
+            bg="#1e293b",
+            font=("Segoe UI", 9),
+        ).pack(anchor=tk.W)
+        e_name = tk.Entry(
+            form_frame,
+            bg="#334155",
+            fg="white",
+            insertbackground="white",
+            font=("Segoe UI", 10),
+        )
         e_name.pack(fill=tk.X, pady=5)
         e_name.insert(0, "CustomSensor")
 
-        tk.Label(form_frame, text="Ancho por defecto (px):", fg="#cbd5e1", bg="#1e293b", font=("Segoe UI", 9)).pack(anchor=tk.W)
-        e_w = tk.Entry(form_frame, bg="#334155", fg="white", insertbackground="white", font=("Segoe UI", 10))
+        tk.Label(
+            form_frame,
+            text="Ancho por defecto (px):",
+            fg="#cbd5e1",
+            bg="#1e293b",
+            font=("Segoe UI", 9),
+        ).pack(anchor=tk.W)
+        e_w = tk.Entry(
+            form_frame,
+            bg="#334155",
+            fg="white",
+            insertbackground="white",
+            font=("Segoe UI", 10),
+        )
         e_w.pack(fill=tk.X, pady=5)
         e_w.insert(0, "180")
 
-        tk.Label(form_frame, text="Alto por defecto (px):", fg="#cbd5e1", bg="#1e293b", font=("Segoe UI", 9)).pack(anchor=tk.W)
-        e_h = tk.Entry(form_frame, bg="#334155", fg="white", insertbackground="white", font=("Segoe UI", 10))
+        tk.Label(
+            form_frame,
+            text="Alto por defecto (px):",
+            fg="#cbd5e1",
+            bg="#1e293b",
+            font=("Segoe UI", 9),
+        ).pack(anchor=tk.W)
+        e_h = tk.Entry(
+            form_frame,
+            bg="#334155",
+            fg="white",
+            insertbackground="white",
+            font=("Segoe UI", 10),
+        )
         e_h.pack(fill=tk.X, pady=5)
         e_h.insert(0, "120")
 
         def generate_template():
             wname = e_name.get().strip()
-            if not wname: return
-            try: width, height = int(e_w.get()), int(e_h.get())
-            except: width, height = 180, 120
+            if not wname:
+                return
+            try:
+                width, height = int(e_w.get()), int(e_h.get())
+            except ValueError:
+                width, height = 180, 120
+
             filename = os.path.join(CUSTOM_WIDGETS_DIR, f"{wname.lower()}.py")
             template_code = (
-                f"class {wname}:\n    def __init__(self, width={width}, height={height}):\n        self.width = width\n        self.height = height\n\n"
-                f"    def render_canvas(self, canvas, x, y):\n        box = canvas.create_rectangle(x, y, x + self.width, y + self.height, fill='#0f172a', outline='#38bdf8', width=2)\n"
-                f"        txt = canvas.create_text(x + self.width/2, y + self.height/2, text='{wname}', fill='#38bdf8', font=('Segoe UI', 10, 'bold'))\n        return [box, txt]\n\n"
+                f"class {wname}:\n"
+                f"    def __init__(self, width={width}, height={height}):\n"
+                f"        self.width = width\n"
+                f"        self.height = height\n\n"
+                f"    def render_canvas(self, canvas, x, y):\n"
+                f"        box = canvas.create_rectangle(x, y, x + self.width, y + self.height, fill='#0f172a', outline='#38bdf8', width=2)\n"
+                f"        txt = canvas.create_text(x + self.width/2, y + self.height/2, text='{wname}', fill='#38bdf8', font=('Segoe UI', 10, 'bold'))\n"
+                f"        return [box, txt]\n\n"
                 f"    def render_html(self, w_id, props):\n"
                 f"        return f\"<div class='bg-slate-900 border border-cyan-500 rounded-xl flex items-center justify-center w-full h-full text-cyan-400 font-bold'>{{props.get('label', '{wname}')}}</div>\"\n"
             )
             try:
-                with open(filename, 'w', encoding='utf-8') as f: f.write(template_code)
+                with open(filename, "w", encoding="utf-8") as f:
+                    f.write(template_code)
                 messagebox.showinfo("Exito", f"Widget creado en:\n{filename}")
                 diag.destroy()
-                self.load_custom_widgets_plugins()
-                self.setup_ui()
-            except Exception as ex: messagebox.showerror("Error", str(ex))
 
-        tk.Button(diag, text="Crear Plantilla", command=generate_template, bg="#10b981", fg="white", font=("Segoe UI", 10, "bold"), relief=tk.FLAT).pack(pady=15)
+                # Recargar módulos de widgets y refrescar únicamente la lista lateral
+                self.load_custom_widgets_plugins()
+                self.refresh_widget_library()
+            except Exception as ex:
+                messagebox.showerror("Error", str(ex))
+
+        tk.Button(
+            diag,
+            text="Crear Plantilla",
+            command=generate_template,
+            bg="#10b981",
+            fg="white",
+            font=("Segoe UI", 10, "bold"),
+            relief=tk.FLAT,
+        ).pack(pady=15)
 
     def pick_color_var(self, str_var):
         color_code = colorchooser.askcolor(title="Seleccionar Color", color=str_var.get())
@@ -669,19 +1304,291 @@ class IoTBuilderApp:
             self.save_state()
             str_var.set(color_code[1])
             self.update_prop_live()
+    
+    def open_table_editor(self, w):
+        diag = tk.Toplevel(self.root)
+        diag.title("Editor Visual de Tabla")
+        diag.geometry("600x450")
+        diag.config(bg="#1e293b")
+        diag.grab_set()
 
+        tk.Label(
+            diag,
+            text="Editor de Filas y Columnas",
+            font=("Segoe UI", 11, "bold"),
+            fg="white",
+            bg="#1e293b",
+        ).pack(pady=10)
+
+        container = tk.Frame(diag, bg="#1e293b")
+        container.pack(fill=tk.BOTH, expand=True, padx=15, pady=5)
+
+        canvas = tk.Canvas(container, bg="#0f172a", highlightthickness=0)
+        scrollbar_y = ttk.Scrollbar(
+            container, orient="vertical", command=canvas.yview
+        )
+        scrollbar_x = ttk.Scrollbar(
+            container, orient="horizontal", command=canvas.xview
+        )
+        grid_frame = tk.Frame(canvas, bg="#0f172a")
+
+        grid_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all")),
+        )
+        canvas.create_window((0, 0), window=grid_frame, anchor="nw")
+        canvas.configure(
+            yscrollcommand=scrollbar_y.set, xscrollcommand=scrollbar_x.set
+        )
+
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar_y.pack(side=tk.RIGHT, fill=tk.Y)
+        scrollbar_x.pack(side=tk.BOTTOM, fill=tk.X)
+
+        # Parsear datos actuales de w.props
+        cols_str = w.props.get("scroll_cols", "Col 1, Col 2")
+        rows_str = w.props.get("scroll_rows", "1, 2 | A, B")
+
+        headers = [h.strip() for h in cols_str.split(",")]
+        col_blocks = [b.strip() for b in rows_str.split("|")]
+
+        data_matrix = []
+        num_cols = len(headers)
+        max_rows = 1
+        parsed_cols = []
+        for block in col_blocks:
+            items = [i.strip() for i in block.split(",")]
+            parsed_cols.append(items)
+            if len(items) > max_rows:
+                max_rows = len(items)
+
+        for r in range(max_rows):
+            row_vals = []
+            for c in range(num_cols):
+                val = ""
+                if c < len(parsed_cols) and r < len(parsed_cols[c]):
+                    val = parsed_cols[c][r]
+                row_vals.append(val)
+            data_matrix.append(row_vals)
+
+        entries_grid = []
+        selected_row = 0  # Índice de fila seleccionado en data_matrix
+        selected_col = 0  # Índice de columna seleccionado en headers
+
+        def set_active(r, c):
+            nonlocal selected_row, selected_col
+            selected_col = c
+            if r > 0:
+                selected_row = r - 1  # Ajusta para omitir la fila de encabezados
+
+        def rebuild_grid():
+            nonlocal entries_grid
+            for widget in grid_frame.winfo_children():
+                widget.destroy()
+            entries_grid = []
+
+            # Fila 0: Encabezados
+            header_entries = []
+            for c, h_text in enumerate(headers):
+                e = tk.Entry(
+                    grid_frame,
+                    font=("Segoe UI", 9, "bold"),
+                    bg="#334155",
+                    fg="#38bdf8",
+                    justify="center",
+                )
+                e.insert(0, h_text)
+                e.grid(row=0, column=c, padx=2, pady=2, sticky="nsew")
+                e.bind(
+                    "<FocusIn>",
+                    lambda event, row_idx=0, col_idx=c: set_active(
+                        row_idx, col_idx
+                    ),
+                )
+                header_entries.append(e)
+            entries_grid.append(header_entries)
+
+            # Filas de datos
+            for r, row_data in enumerate(data_matrix):
+                row_entries = []
+                for c, val in enumerate(row_data):
+                    e = tk.Entry(
+                        grid_frame,
+                        font=("Segoe UI", 9),
+                        bg="#1e293b",
+                        fg="white",
+                    )
+                    e.insert(0, val)
+                    e.grid(row=r + 1, column=c, padx=2, pady=2, sticky="nsew")
+                    e.bind(
+                        "<FocusIn>",
+                        lambda event, row_idx=r + 1, col_idx=c: set_active(
+                            row_idx, col_idx
+                        ),
+                    )
+                    row_entries.append(e)
+                entries_grid.append(row_entries)
+
+        rebuild_grid()
+
+        btn_frame = tk.Frame(diag, bg="#1e293b")
+        btn_frame.pack(fill=tk.X, padx=15, pady=10)
+
+        def add_row():
+            update_matrix_from_entries()
+            data_matrix.append(["" for _ in range(len(headers))])
+            rebuild_grid()
+
+        def remove_row():
+            nonlocal selected_row
+            update_matrix_from_entries()
+            if len(data_matrix) > 1:
+                if selected_row < 0 or selected_row >= len(data_matrix):
+                    selected_row = len(data_matrix) - 1
+                # Elimina exactamente la fila seleccionada
+                data_matrix.pop(selected_row)
+                if selected_row >= len(data_matrix):
+                    selected_row = len(data_matrix) - 1
+                rebuild_grid()
+            else:
+                messagebox.showwarning(
+                    "Aviso", "Debe mantener al menos una fila.", parent=diag
+                )
+
+        def add_col():
+            update_matrix_from_entries()
+            headers.append(f"Col {len(headers)+1}")
+            for row in data_matrix:
+                row.append("")
+            rebuild_grid()
+
+        def remove_col():
+            nonlocal selected_col
+            update_matrix_from_entries()
+            if len(headers) > 1:
+                if selected_col < 0 or selected_col >= len(headers):
+                    selected_col = len(headers) - 1
+                # Elimina la columna seleccionada de los encabezados y de cada fila
+                headers.pop(selected_col)
+                for row in data_matrix:
+                    if selected_col < len(row):
+                        row.pop(selected_col)
+                if selected_col >= len(headers):
+                    selected_col = len(headers) - 1
+                rebuild_grid()
+            else:
+                messagebox.showwarning(
+                    "Aviso", "Debe mantener al menos una columna.", parent=diag
+                )
+
+        def update_matrix_from_entries():
+            nonlocal headers, data_matrix
+            headers = [
+                entries_grid[0][c].get().strip()
+                for c in range(len(entries_grid[0]))
+            ]
+            new_matrix = []
+            for r in range(1, len(entries_grid)):
+                row_vals = [
+                    entries_grid[r][c].get().strip()
+                    for c in range(len(entries_grid[r]))
+                ]
+                new_matrix.append(row_vals)
+            data_matrix[:] = new_matrix
+
+        tk.Button(
+            btn_frame,
+            text="+ Fila",
+            command=add_row,
+            bg="#334155",
+            fg="white",
+            relief=tk.FLAT,
+        ).pack(side=tk.LEFT, padx=2)
+        tk.Button(
+            btn_frame,
+            text="- Fila",
+            command=remove_row,
+            bg="#334155",
+            fg="white",
+            relief=tk.FLAT,
+        ).pack(side=tk.LEFT, padx=2)
+        tk.Button(
+            btn_frame,
+            text="+ Columna",
+            command=add_col,
+            bg="#334155",
+            fg="white",
+            relief=tk.FLAT,
+        ).pack(side=tk.LEFT, padx=10)
+        tk.Button(
+            btn_frame,
+            text="- Columna",
+            command=remove_col,
+            bg="#334155",
+            fg="white",
+            relief=tk.FLAT,
+        ).pack(side=tk.LEFT, padx=2)
+
+        def save_and_close():
+            update_matrix_from_entries()
+            new_cols_str = ", ".join(headers)
+            cols_data_blocks = []
+            for c in range(len(headers)):
+                col_items = [
+                    data_matrix[r][c]
+                    for r in range(len(data_matrix))
+                    if c < len(data_matrix[r])
+                ]
+                cols_data_blocks.append(", ".join(col_items))
+            new_rows_str = " | ".join(cols_data_blocks)
+
+            self.save_state()
+            w.props["scroll_cols"] = new_cols_str
+            w.props["scroll_rows"] = new_rows_str
+
+            if hasattr(self, "custom_prop_vars"):
+                if "scroll_rows" in self.custom_prop_vars:
+                    self.custom_prop_vars["scroll_rows"].set(new_rows_str)
+
+            self.update_prop_live()
+            diag.destroy()
+
+        tk.Button(
+            diag,
+            text="Guardar Cambios",
+            command=save_and_close,
+            bg="#10b981",
+            fg="white",
+            font=("Segoe UI", 10, "bold"),
+            relief=tk.FLAT,
+        ).pack(side=tk.BOTTOM, pady=10)
+    
+    
+    
     def build_inspector_fields(self):
         for widget in self.prop_container.winfo_children(): widget.destroy()
 
-        def add_field(label_text, textvariable, callback=None):
-            lbl = tk.Label(self.prop_container, text=label_text, font=("Segoe UI", 9))
+        t = THEMES[self.current_theme]
+        def add_field(label_text, textvariable, callback=None, readonly=False):
+            lbl = tk.Label(self.prop_container, text=label_text, font=("Segoe UI", 9), bg=t["panel"], fg=t["fg"])
             lbl.pack(anchor=tk.W, pady=(5, 0))
-            ent = tk.Entry(self.prop_container, textvariable=textvariable)
+            ent = tk.Entry(
+                self.prop_container, 
+                textvariable=textvariable, 
+                bg=t["bg"], 
+                fg=t["fg"], 
+                insertbackground=t["fg"], 
+                relief=tk.FLAT,
+                readonlybackground=t["bg"]  # <--- Esto fuerza el fondo oscuro/claro en modo readonly
+            )
+            if readonly:
+                ent.config(state='readonly')
             ent.pack(fill=tk.X, pady=2)
-            if callback: ent.bind("<KeyRelease>", callback)
+            if callback and not readonly: 
+                ent.bind("<KeyRelease>", callback)
             return ent
 
-        add_field("ID unico:", self.var_id)
+        add_field("ID unico:", self.var_id, readonly=True)
         if self.prop_container.winfo_children(): self.prop_container.winfo_children()[-1].config(state='readonly')
         add_field("Etiqueta / Titulo:", self.var_label, self.update_prop_live)
         add_field("Posicion X:", self.var_x, self.update_prop_live)
@@ -693,12 +1600,13 @@ class IoTBuilderApp:
             return
         w_cls = None
         if hasattr(self, 'custom_widget_classes'):
-            print(self.selected.type, ".selected")
+            # print(self.selected.type, ".selected")
             for k, cls in self.custom_widget_classes.items():
                 if k.lower() == self.selected.type.lower():
                     w_cls = cls
                     break
-                    
+        
+        # Inbuild widgets
         if self.selected.type == "ToggleSwitch":
             add_field("Texto ON:", self.var_toggle_on_text, self.update_prop_live)
             add_field("Texto OFF:", self.var_toggle_off_text, self.update_prop_live)
@@ -758,7 +1666,7 @@ class IoTBuilderApp:
         if self.selected.type in ["LED", "Button", "Gauge", "Plot", "ProgressBar", "Knob", "VerticalContainer", "HorizontalContainer", "MatrixContainer", "Compass"]:
             lbl = tk.Label(self.prop_container, text="Color Principal / Borde:", font=("Segoe UI", 9))
             lbl.pack(anchor=tk.W, pady=(5, 0))
-            fr = tk.Frame(self.prop_container)
+            fr = tk.Frame(self.prop_container, bg=t["panel"])
             fr.pack(fill=tk.X, pady=2)
             ent = tk.Entry(fr, textvariable=self.var_color)
             ent.pack(side=tk.LEFT, fill=tk.X, expand=True)
@@ -775,25 +1683,25 @@ class IoTBuilderApp:
         if self.selected.type == "SevenSegment":
             add_field("Numero de Digitos (ej. 2, 3, 4):", self.var_seg_digits, self.update_prop_live)
         
-        # <-- NUEVO
+        # Custom Widgets
         if w_cls:
-            if not hasattr(self.selected, 'props') or not isinstance(self.selected.props, dict):
+            if not hasattr(self.selected, "props") or not isinstance(self.selected.props, dict):
                 self.selected.props = {}
 
-            if hasattr(w_cls, 'default_props'):
+            if hasattr(w_cls, "default_props"):
                 for dp_k, dp_v in w_cls.default_props.items():
                     if dp_k not in self.selected.props:
                         self.selected.props[dp_k] = dp_v
 
             self.custom_prop_vars = {}
-            custom_props = getattr(w_cls, 'custom_properties', None)
-            
-            if not custom_props and hasattr(w_cls, 'default_props'):
+            custom_props = getattr(w_cls, "custom_properties", None)
+
+            if not custom_props and hasattr(w_cls, "default_props"):
                 custom_props = [
                     {
                         "name": k,
                         "label": f"{k.replace('_', ' ').title()}:",
-                        "type": "color" if "color" in k.lower() else "text"
+                        "type": "color" if "color" in k.lower() else "text",
                     }
                     for k, v in w_cls.default_props.items()
                     if k != "label"
@@ -803,26 +1711,267 @@ class IoTBuilderApp:
                 for p_info in custom_props:
                     p_name = p_info["name"]
                     p_label = p_info.get("label", p_name)
-                    p_type = p_info.get("type", "text")
-                    
-                    val = self.selected.props.get(p_name, "")
+                    p_type = str(p_info.get("type", "text")).lower()
+
+                    val = self.selected.props.get(
+                        p_name,
+                        getattr(w_cls, "default_props", {}).get(p_name, ""),
+                    )
                     var = tk.StringVar(value=str(val))
                     self.custom_prop_vars[p_name] = var
 
+                    # Selector de Color (Color Picker)
                     if p_type == "color":
-                        lbl = tk.Label(self.prop_container, text=p_label, font=("Segoe UI", 9))
+                        lbl = tk.Label(
+                            self.prop_container,
+                            text=p_label,
+                            font=("Segoe UI", 9),
+                        )
                         lbl.pack(anchor=tk.W, pady=(5, 0))
-                        fr = tk.Frame(self.prop_container)
+
+                        fr = tk.Frame(self.prop_container, bg=t["panel"])
                         fr.pack(fill=tk.X, pady=2)
+
+                        # Validar si el valor inicial es un color Hex válido (#RGB o #RRGGBB)
+                        init_val = str(val).strip()
+                        init_color = (
+                            init_val
+                            if re.match(r"^#(?:[0-9a-fA-F]{3}){1,2}$", init_val)
+                            else "#3b82f6"
+                        )
+
+                        color_box = tk.Frame(
+                            fr,
+                            width=18,
+                            height=18,
+                            bg=init_color,
+                            highlightthickness=1,
+                            highlightbackground="#475569",
+                        )
+                        color_box.pack(side=tk.LEFT, padx=(0, 6))
+
+                        ent = tk.Entry(fr, textvariable=var)
+                        ent.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+                        def on_color_key(e, cb=color_box, v=var):
+                            color_str = v.get().strip()
+                            # Solo actualiza la vista previa si es un Hex completo de 3 o 6 dígitos
+                            if re.match(r"^#(?:[0-9a-fA-F]{3}){1,2}$", color_str):
+                                try:
+                                    cb.config(bg=color_str)
+                                except tk.TclError:
+                                    pass
+                            self.update_prop_live()
+
+                        ent.bind("<KeyRelease>", on_color_key)
+
+                        def open_picker(target_var, preview_frame):
+                            c_code = colorchooser.askcolor(
+                                title=f"Seleccionar {p_label}",
+                                color=target_var.get(),
+                            )
+                            if c_code[1]:
+                                self.save_state()
+                                target_var.set(c_code[1])
+                                preview_frame.config(bg=c_code[1])
+                                self.update_prop_live()
+
+                        tk.Button(
+                            fr,
+                            text="Elegir",
+                            command=lambda v=var, cb=color_box: open_picker(
+                                v, cb
+                            ),
+                        ).pack(side=tk.RIGHT, padx=5)
+
+                    # Selector de Archivo (File Dialog)
+                    elif p_type in ["file", "filepath", "file_path", "path"]:
+                        lbl = tk.Label(
+                            self.prop_container,
+                            text=p_label,
+                            font=("Segoe UI", 9),
+                        )
+                        lbl.pack(anchor=tk.W, pady=(5, 0))
+
+                        fr = tk.Frame(self.prop_container, bg=t["panel"])
+                        fr.pack(fill=tk.X, pady=2)
+
                         ent = tk.Entry(fr, textvariable=var)
                         ent.pack(side=tk.LEFT, fill=tk.X, expand=True)
                         ent.bind("<KeyRelease>", self.update_prop_live)
-                        tk.Button(fr, text="Elegir", command=lambda v=var: self.pick_color_var(v)).pack(side=tk.RIGHT, padx=5)
+
+                        def open_file_dialog(target_var, spec):
+                            # Permite definir filtros opcionales en custom_properties o usa 'Todos los archivos' por defecto
+                            ftypes = spec.get(
+                                "file_types", [("Todos los archivos", "*.*")]
+                            )
+                            selected_file = filedialog.askopenfilename(
+                                title=f"Seleccionar {p_label}",
+                                filetypes=ftypes,
+                            )
+                            if selected_file:
+                                self.save_state()
+                                target_var.set(selected_file)
+                                self.update_prop_live()
+
+                        tk.Button(
+                            fr,
+                            text="Examinar",
+                            command=lambda v=var, spec=p_info: open_file_dialog(
+                                v, spec
+                            ),
+                        ).pack(side=tk.RIGHT, padx=5)
+
+                    # Desplegable de Selección (Select / Options)
+                    elif p_type in ["select", "choice", "combobox"]:
+                        options = p_info.get(
+                            "options", ["Opción 1", "Opción 2"]
+                        )
+                        lbl = tk.Label(
+                            self.prop_container,
+                            text=p_label,
+                            font=("Segoe UI", 9),
+                        )
+                        lbl.pack(anchor=tk.W, pady=(5, 0))
+                        cb = ttk.Combobox(
+                            self.prop_container,
+                            textvariable=var,
+                            values=options,
+                            state="readonly",
+                        )
+                        cb.pack(fill=tk.X, pady=2)
+                        cb.bind(
+                            "<<ComboboxSelected>>", self.update_prop_live
+                        )
+
+                    # Booleano (True/False)
+                    elif p_type in ["boolean", "bool"]:
+                        lbl = tk.Label(
+                            self.prop_container,
+                            text=p_label,
+                            font=("Segoe UI", 9),
+                            bg=t["panel"],
+                            fg=t["fg"]
+                        )
+                        lbl.pack(anchor=tk.W, pady=(5, 0))
+                        
+                        # Pasar directamente el método como comando
+                        slide_btn = SlideButton(
+                            self.prop_container,
+                            variable=var,
+                            command=self.update_prop_live
+                        )
+                        slide_btn.pack(anchor=tk.W, pady=2)
+                    # Editor Visual de Tabla (Table / Grid Editor)
+                    elif p_type in ["table", "grid", "matrix"]:
+                        lbl = tk.Label(
+                            self.prop_container,
+                            text=p_label,
+                            font=("Segoe UI", 9),
+                        )
+                        lbl.pack(anchor=tk.W, pady=(5, 0))
+
+                        fr = tk.Frame(self.prop_container, bg=t["panel"])
+                        fr.pack(fill=tk.X, pady=2)
+
+                        # Muestra un resumen o botón para abrir la ventana modal
+                        tk.Button(
+                            fr,
+                            text="Editar Tabla",
+                            command=lambda w=self.selected: self.open_table_editor(w),
+                            bg="#2563eb",
+                            fg="white",
+                            font=("Segoe UI", 9, "bold"),
+                            relief=tk.FLAT,
+                            cursor="hand2",
+                        ).pack(fill=tk.X, expand=True, pady=2)
+                    
+                    elif p_type == "custom":
+                        lbl = tk.Label(
+                            self.prop_container,
+                            text=p_label,
+                            font=("Segoe UI", 9),
+                            bg=t["panel"],
+                            fg=t["fg"]
+                        )
+                        lbl.pack(anchor=tk.W, pady=(5, 0))
+
+                        fr = tk.Frame(self.prop_container, bg=t["panel"])
+                        fr.pack(fill=tk.X, pady=2)
+
+                        fname = p_info.get("fname", "open_custom_editor")
+
+                        def call_custom_editor(w=self.selected, fn=fname):
+                            if w and hasattr(w, fn):
+                                getattr(w, fn)(self)
+                            elif w:
+                                messagebox.showerror("Error", f"El método '{fn}' no está definido en el widget.")
+
+                        tk.Button(
+                            fr,
+                            text=p_info.get("btn_text", "Configurar"),
+                            command=call_custom_editor,
+                            bg=t.get("accent", "#2563eb"),
+                            fg="white",
+                            font=("Segoe UI", 9, "bold"),
+                            relief=tk.FLAT,
+                            cursor="hand2"
+                        ).pack(fill=tk.X, expand=True, pady=2, ipady=3)
                     else:
                         add_field(p_label, var, self.update_prop_live)
+        # Aplica el tema oscuro/claro a todos los elementos hijos del inspector automáticamente
+        def style_inspector_children(parent):
+            for child in parent.winfo_children():
+                try:
+                    if isinstance(child, tk.Label):
+                        child.config(bg=t["panel"], fg=t["fg"])
+                    elif isinstance(child, tk.Entry):
+                        child.config(bg=t["bg"], fg=t["fg"], insertbackground=t["fg"])
+                    elif isinstance(child, tk.Button):
+                        child.config(bg=t["border"], fg=t["fg"], activebackground=t["accent"], activeforeground=t["fg"])
+                    elif isinstance(child, tk.Frame):
+                        child.config(bg=t["panel"])
+                        style_inspector_children(child) # Entra recursivamente en los sub-marcos (como los de color)
+                except Exception:
+                    pass
+        style_inspector_children(self.prop_container)
 
     def apply_theme(self):
         t = THEMES[self.current_theme]
+        
+        # 1. Definir e inicializar style aquí mismo
+        style = ttk.Style()
+        style.theme_use('clam')
+        
+        # Configurar Combobox dinámico
+        style.configure('TCombobox', 
+                        fieldbackground=t["bg"], 
+                        background=t["panel"], 
+                        foreground=t["fg"],
+                        arrowcolor=t["accent"])
+        style.map('TCombobox', 
+                  fieldbackground=[('readonly', t["bg"])],
+                  selectbackground=[('readonly', t["accent"])],
+                  foreground=[('readonly', t["fg"])])
+                  
+        # Configurar Scrollbars dinámicas
+        style.configure('TScrollbar', 
+                        background=t["panel"], 
+                        troughcolor=t["bg"], 
+                        bordercolor=t["border"], 
+                        arrowcolor=t["fg"])
+        style.map('TScrollbar',
+                  background=[('active', t["accent"]), ('pressed', t["accent"])],
+                  troughcolor=[('active', t["bg"]), ('pressed', t["bg"])])
+                        
+        # Configurar Notebook y Pestañas dinámicas
+        style.configure('TNotebook', background=t["panel"], bordercolor=t["border"])
+        style.configure('TNotebook.Tab', background=t["panel"], foreground=t["fg"], padding=[10, 5])
+        style.map('TNotebook.Tab', 
+                  background=[('selected', t["bg"]), ('active', t["border"])],
+                  foreground=[('selected', t["accent"]), ('active', t["fg"])])
+        
+        # Ventana principal y paneles contenedores principales
         self.root.config(bg=t["bg"])
         self.toolbar.config(bg=t["panel"])
         self.left_panel.config(bg=t["panel"])
@@ -832,12 +1981,80 @@ class IoTBuilderApp:
         self.prop_container.config(bg=t["panel"])
         self.canvas.config(bg=t["canvas"])
         
-        self.lbl_title.config(bg=t["panel"], fg=t["fg"])
-        self.lbl_lib.config(bg=t["panel"], fg=t["fg"])
-        self.lbl_insp.config(bg=t["panel"], fg=t["fg"])
+        # Etiquetas principales de los paneles
+        if hasattr(self, "lbl_title"): self.lbl_title.config(bg=t["panel"], fg=t["fg"])
+        if hasattr(self, "lbl_lib"): self.lbl_lib.config(bg=t["panel"], fg=t["fg"])
+        if hasattr(self, "lbl_insp"): self.lbl_insp.config(bg=t["panel"], fg=t["fg"])
+        
+        # Editor de código (ScrolledText) y pestañas
+        if hasattr(self, "code_paned"):
+            self.code_paned.config(bg=t["border"])
+        if hasattr(self, "scripts_frame"):
+            self.scripts_frame.config(bg=t["panel"])
+        if hasattr(self, "lbl_scripts_title"):
+            self.lbl_scripts_title.config(bg=t["panel"], fg=t["fg"])
+        if hasattr(self, "editor_frame"):
+            self.editor_frame.config(bg=t["panel"])
+        if hasattr(self, "code_toolbar"):
+            self.code_toolbar.config(bg=t["panel"])
+        if hasattr(self, "lbl_code_title"):
+            self.lbl_code_title.config(bg=t["panel"], fg=t["accent"])
+            
+        if hasattr(self, "code_editor"):
+            self.code_editor.config(
+                bg=t["panel"],  # Fondo acorde al panel del tema activo
+                fg=t["fg"], 
+                insertbackground=t["accent"]
+            )
+            
+        if hasattr(self, "scripts_listbox"):
+            self.scripts_listbox.config(
+                bg=t["panel"],
+                fg=t["fg"],
+                selectbackground=t["accent"],
+                selectforeground="#ffffff",
+                highlightthickness=0,
+                bd=0
+            )
+
+        # Componentes dentro de la biblioteca de widgets (izquierda)
         for widget in self.lib_inner.winfo_children():
-            if isinstance(widget, tk.Button): widget.config(bg=t["panel"], fg=t["fg"], activebackground=t["border"], activeforeground=t["fg"])
-            elif isinstance(widget, tk.Label): widget.config(bg=t["panel"], fg=t["accent"] if "-" in widget.cget("text") else t["fg"])
+            try:
+                if isinstance(widget, tk.Button):
+                    widget.config(bg=t["panel"], fg=t["fg"], activebackground=t["border"], activeforeground=t["fg"], relief=tk.FLAT)
+                elif isinstance(widget, tk.Label):
+                    # Si la etiqueta tiene guion "-", actúa como categoría (ej: "- Controles")
+                    is_category = "-" in widget.cget("text")
+                    widget.config(bg=t["panel"], fg=t["accent"] if is_category else t["fg"])
+            except Exception:
+                pass
+
+        # Inspector de propiedades (elementos dinámicos)
+        t = THEMES[self.current_theme]
+        def style_inspector(parent):
+            for child in parent.winfo_children():
+                try:
+                    if isinstance(child, tk.Label):
+                        child.config(bg=t["panel"], fg=t["fg"])
+                    elif isinstance(child, tk.Entry):
+                        try:
+                            child.config(
+                                bg=t["bg"], 
+                                fg=t["fg"], 
+                                insertbackground=t["fg"], 
+                                readonlybackground=t["bg"]  # <--- Agrega esto
+                            )
+                        except Exception:
+                            pass
+                    elif isinstance(child, tk.Frame):
+                        child.config(bg=t["panel"])
+                        style_inspector(child) # Entra en los sub-marcos (color pickers, etc.)
+                except Exception:
+                    pass
+        style_inspector(self.prop_container)
+        
+        
+        
 
     def change_theme_event(self, event):
         self.current_theme = self.theme_var.get()
@@ -1257,188 +2474,80 @@ class IoTBuilderApp:
         tag, bg_tag = f"wid_{w.id}", f"bg_{w.id}"
         
         if w.type == "Button":
-            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill=w.color if w.color else "#3b82f6", outline=t["border"], width=1, tags=(tag, bg_tag))
-            self.canvas.create_text(w.x + w.width/2, w.y + w.height/2, text=f"[Boton] {w.label}", fill="#ffffff", font=("Segoe UI", 10, "bold"), tags=(tag,))
+            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#234764", width=1, tags=(tag, bg_tag))
+            self.canvas.create_text(w.x + w.width/2, w.y + w.height/2, text=f"{w.type}", fill="#FFFFFF", font=("Segoe UI", 8, "bold"), tags=(tag,))
         elif w.type == "ToggleSwitch":
-            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#0f172a", outline=t["border"], width=1, tags=(tag, bg_tag))
-            cx, cy = w.x + w.width/2, w.y + w.height/2
-            self.canvas.create_oval(cx-35, cy-15, cx+35, cy+15, fill=w.toggle_on_color, outline="#ffffff", width=1, tags=(tag,))
-            self.canvas.create_oval(cx+5, cy-13, cx+33, cy+13, fill="#ffffff", outline="", tags=(tag,))
-            self.canvas.create_text(cx-15, cy, text=w.toggle_on_text, fill="#ffffff", font=("Segoe UI", 8, "bold"), tags=(tag,))
-            self.canvas.create_text(w.x + w.width/2, w.y - 10, text=f"Switch: {w.label}", fill=t["fg"], font=("Segoe UI", 8, "bold"), tags=(tag,))
+            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#234764", width=1, tags=(tag, bg_tag))
+            self.canvas.create_text(w.x + w.width/2, w.y + w.height/2, text=f"{w.type}", fill="#FFFFFF", font=("Segoe UI", 8, "bold"), tags=(tag,))
         elif w.type == "Label":
-            bg = w.label_bg_color if w.label_shape != "Ninguna" else ""
-            outline = "#334155" if w.label_shape != "Ninguna" else ""
-            if w.label_shape == "Redondeada":
-                self.canvas.create_oval(w.x, w.y, w.x+w.width, w.y+w.height, fill=bg, outline=outline, width=1, tags=(tag, bg_tag))
-            elif w.label_shape == "Rectangular":
-                self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill=bg, outline=outline, width=1, tags=(tag, bg_tag))
-            else:
-                self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="", outline="", width=0, tags=(tag, bg_tag))
-            self.canvas.create_text(w.x + w.width/2, w.y + w.height/2, text=w.label, fill=w.label_fg_color, font=("Segoe UI", 10, "bold"), tags=(tag,))
+            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#234764", width=1, tags=(tag, bg_tag))
+            self.canvas.create_text(w.x + w.width/2, w.y + w.height/2, text=f"{w.type}", fill="#FFFFFF", font=("Segoe UI", 10, "bold"), tags=(tag,))
         elif w.type == "LED":
-            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#1e293b", outline=t["border"], width=1, tags=(tag, bg_tag))
-            self.canvas.create_oval(w.x + w.width/2 - 15, w.y + w.height/2 - 15, w.x + w.width/2 + 15, w.y + w.height/2 + 15, fill=w.color if w.color else "#ef4444", outline="#ffffff", width=2, tags=(tag,))
-            self.canvas.create_text(w.x + w.width/2, w.y + 12, text=f"LED: {w.label}", fill=t["fg"], font=("Segoe UI", 8, "bold"), tags=(tag,))
+            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#234764", width=1, tags=(tag, bg_tag))
+            self.canvas.create_text(w.x + w.width/2, w.y + w.height/2, text=f"{w.type}", fill="#FFFFFF", font=("Segoe UI", 8, "bold"), tags=(tag,))
         elif w.type == "Slider":
-            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#1e293b", outline=t["border"], width=1, tags=(tag, bg_tag))
-            self.canvas.create_line(w.x + 20, w.y + w.height/2, w.x + w.width - 20, w.y + w.height/2, fill="#64748b", width=6, tags=(tag,))
-            self.canvas.create_oval(w.x + w.width/2 - 8, w.y + w.height/2 - 10, w.x + w.width/2 + 8, w.y + w.height/2 + 10, fill=w.color if w.color else "#3b82f6", outline="#ffffff", width=2, tags=(tag,))
-            self.canvas.create_text(w.x + w.width/2, w.y + 15, text=f"[Slider] {w.label}", fill=t["fg"], font=("Segoe UI", 9, "bold"), tags=(tag,))
+            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#234764", width=1, tags=(tag, bg_tag))
+            self.canvas.create_text(w.x + w.width/2, w.y + w.height/2, text=f"{w.type}", fill="#FFFFFF", font=("Segoe UI", 9, "bold"), tags=(tag,))
         elif w.type == "CheckBox":
-            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#1e293b", outline=t["border"], width=1, tags=(tag, bg_tag))
-            self.canvas.create_rectangle(w.x + 15, w.y + w.height/2 - 10, w.x + 35, w.y + w.height/2 + 10, fill="#0f172a", outline="#3b82f6", width=2, tags=(tag,))
-            self.canvas.create_text(w.x + 45, w.y + w.height/2, text=f"[Check] {w.label}", fill=t["fg"], font=("Segoe UI", 9, "bold"), anchor="w", tags=(tag,))
+            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#234764", width=1, tags=(tag, bg_tag))
+            self.canvas.create_text(w.x + w.width/2, w.y + w.height/2, text=f"{w.type}", fill="#FFFFFF", font=("Segoe UI", 9, "bold"), tags=(tag,))
         elif w.type in ["TextBox", "NumberBox"]:
-            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#0f172a", outline="#334155", width=1, tags=(tag, bg_tag))
-            self.canvas.create_text(w.x + 15, w.y + w.height/2, text=f"[{w.type}] {w.label}", fill="#94a3b8", font=("Segoe UI", 9), anchor="w", tags=(tag,))
+            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#234764", width=1, tags=(tag, bg_tag))
+            self.canvas.create_text(w.x+w.width/2, w.y + w.height/2, text=f"{w.type}", fill="#FFFFFF", font=("Segoe UI", 9), tags=(tag,))
         elif w.type == "StatusBar":
-            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#0f172a", outline="#334155", width=1, tags=(tag, bg_tag))
-            self.canvas.create_text(w.x + 15, w.y + w.height/2, text=f"Status: {w.label}", fill="#10b981", font=("Segoe UI", 9, "bold"), anchor="w", tags=(tag,))
+            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#234764", width=1, tags=(tag, bg_tag))
+            self.canvas.create_text(w.x + w.width/2, w.y + w.height/2, text=f"{w.type}", fill="#FFFFFF", font=("Segoe UI", 9, "bold"), tags=(tag,))
         elif w.type == "Keyboard":
-            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#0f172a", outline="#334155", width=2, tags=(tag, bg_tag))
-            self.canvas.create_text(w.x + w.width/2, w.y + 12, text="[QWERTY Keyboard]", fill="#38bdf8", font=("Segoe UI", 9, "bold"), tags=(tag,))
-            #row1 = ["Q", "W", "E", "R", "T", "Y"]
-            #for i, ch in enumerate(row1):
-            #    self.canvas.create_rectangle(w.x + 8 + i*35, w.y + 30, w.x + 38 + i*35, w.y + 60, fill="#1e293b", outline="#334155", tags=(tag,))
-            #    self.canvas.create_text(w.x + 23 + i*35, w.y + 45, text=ch, fill="#ffffff", font=("Segoe UI", 8, "bold"), tags=(tag,))
+            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#234764", width=2, tags=(tag, bg_tag))
+            self.canvas.create_text(w.x + w.width/2, w.y + w.height/2, text=f"{w.type}", fill="#FFFFFF", font=("Segoe UI", 9, "bold"), tags=(tag,))
         elif w.type == "Clock":
-            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#0f172a", outline="#334155", width=2, tags=(tag, bg_tag))
+            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#234764", width=2, tags=(tag, bg_tag))
             cx, cy = w.x + w.width/2, w.y + w.height/2
             if w.clock_type == "Analogico":
-                self.canvas.create_oval(cx-45, cy-45, cx+45, cy+45, fill="#f8fafc", outline="#334155", width=4, tags=(tag,))
-                self.canvas.create_line(cx, cy, cx, cy-25, fill="#1e293b", width=3, tags=(tag,))
-                self.canvas.create_line(cx, cy, cx+15, cy, fill="#1e293b", width=2, tags=(tag,))
-                self.canvas.create_line(cx, cy, cx+10, cy+15, fill="#ef4444", width=1, tags=(tag,))
-                self.canvas.create_text(cx, cy + 55, text="Reloj Analogico", fill=t["fg"], font=("Segoe UI", 8, "bold"), tags=(tag,))
+                self.canvas.create_text(cx, cy, text="AnalogClock", fill="#FFFFFF", font=("Segoe UI", 8, "bold"), tags=(tag,))
             else:
-                self.canvas.create_text(cx, cy, text="12:00:00", fill="#10b981", font=("Consolas", 18, "bold"), tags=(tag,))
-                self.canvas.create_text(cx, cy + 25, text="Reloj Digital", fill=t["fg"], font=("Segoe UI", 8, "bold"), tags=(tag,))
+                self.canvas.create_text(cx, cy, text="DigitalClock", fill="#FFFFFF", font=("Segoe UI", 8, "bold"), tags=(tag,))
         elif w.type == "Gauge":
-            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#0f172a", outline="#334155", width=2, tags=(tag, bg_tag))
+            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#234764", width=2, tags=(tag, bg_tag))
             cx, cy = w.x + w.width/2, w.y + w.height/2
             if w.gauge_model == "Tacometro Clasico":
-                r = min(w.width, w.height)/2 - 15
-                self.canvas.create_oval(cx-r-4, cy-r-4, cx+r+4, cy+r+4, fill="#000000", outline="", tags=(tag,))
-                self.canvas.create_oval(cx-r, cy-r, cx+r, cy+r, fill="#ffffff", outline="#000000", width=4, tags=(tag,))
-                ticks_data = [
-                    (210, "0", True), (180, "", False), (150, "25", True), 
-                    (120, "", False), (90, "50", True), (60, "", False), 
-                    (30, "75", True), (0, "", False), (-30, "100", True)
-                ]
-                for deg, label_txt, is_major in ticks_data:
-                    rad = math.radians(deg)
-                    l_in = r - (10 if is_major else 6)
-                    x1 = cx + l_in * math.cos(rad)
-                    y1 = cy - l_in * math.sin(rad)
-                    x2 = cx + (r - 2) * math.cos(rad)
-                    y2 = cy - (r - 2) * math.sin(rad)
-                    self.canvas.create_line(x1, y1, x2, y2, fill="#000000", width=2 if is_major else 1, tags=(tag,))
-                    if label_txt:
-                        lx = cx + (r - 20) * math.cos(rad)
-                        ly = cy - (r - 20) * math.sin(rad)
-                        self.canvas.create_text(lx, ly, text=label_txt, fill="#000000", font=("Segoe UI", 8, "bold"), tags=(tag,))
-                n_rad = math.radians(30)
-                nx = cx + (r - 18) * math.cos(n_rad)
-                ny = cy - (r - 18) * math.sin(n_rad)
-                self.canvas.create_line(cx, cy, nx, ny, fill="#2563eb", width=3, tags=(tag,))
-                self.canvas.create_oval(cx-6, cy-6, cx+6, cy+6, fill="#2563eb", outline="", tags=(tag,))
-                self.canvas.create_text(cx, cy + r + 10, text=f"Gauge: {w.label}", fill=t["fg"], font=("Segoe UI", 8, "bold"), tags=(tag,))
+                self.canvas.create_text(cx, cy, text=f"GaugeManometer", fill="#FFFFFF", font=("Segoe UI", 8, "bold"), tags=(tag,))
             else:
-                self.canvas.create_oval(cx-40, cy-40, cx+40, cy+40, outline="#334155", width=8, tags=(tag,))
-                self.canvas.create_text(cx, cy, text="75%", fill="#38bdf8", font=("Segoe UI", 10, "bold"), tags=(tag,))
-                self.canvas.create_text(cx, cy + 55, text=f"Gauge: {w.label}", fill=t["fg"], font=("Segoe UI", 8, "bold"), tags=(tag,))
+                self.canvas.create_text(cx, cy, text=f"GaugeCircular", fill="#FFFFFF", font=("Segoe UI", 8, "bold"), tags=(tag,))
         elif w.type == "ProgressBar":
-            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#1e293b", outline=t["border"], width=1, tags=(tag, bg_tag))
-            self.canvas.create_rectangle(w.x + 15, w.y + w.height/2 - 8, w.x + w.width - 15, w.y + w.height/2 + 8, fill="#0f172a", outline="#334155", tags=(tag,))
-            fill_w = max(5, int((w.width - 30) * 0.75))
-            self.canvas.create_rectangle(w.x + 15, w.y + w.height/2 - 8, w.x + 15 + fill_w, w.y + w.height/2 + 8, fill=w.color if w.color else "#3b82f6", outline="", tags=(tag,))
-            self.canvas.create_text(w.x + w.width/2, w.y + w.height/2, text=f"{w.prog_value}%", fill="#ffffff", font=("Segoe UI", 9, "bold"), tags=(tag,))
-            self.canvas.create_text(w.x + w.width/2, w.y - 10, text=f"Progress: {w.label}", fill=t["fg"], font=("Segoe UI", 9, "bold"), tags=(tag,))
+            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#234764", outline=t["border"], width=1, tags=(tag, bg_tag))
+            self.canvas.create_text(w.x + w.width/2, w.y + w.height/2, text=f"{w.type}", fill="#FFFFFF", font=("Segoe UI", 9, "bold"), tags=(tag,))
         elif w.type == "Plot":
-            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#090d16", outline="#334155", width=2, tags=(tag, bg_tag))
-            self.canvas.create_line(w.x + 20, w.y + w.height - 30, w.x + w.width - 20, w.y + w.height - 30, fill="#1e293b", width=1, tags=(tag,))
-            self.canvas.create_text(w.x + w.width/2, w.y + 15, text=f"[Plot] {w.label}", fill="#38bdf8", font=("Segoe UI", 9, "bold"), tags=(tag,))
+            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#090d16", width=2, tags=(tag, bg_tag))
+            self.canvas.create_text(w.x + w.width/2, w.y + w.height/2, text=f"{w.type}", fill="#38bdf8", font=("Segoe UI", 9, "bold"), tags=(tag,))
         elif w.type == "Tabs":
-            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#0f172a", outline="#334155", width=2, tags=(tag, bg_tag))
-            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+32, fill="#1e293b", outline="", tags=(tag,))
-            t_names = [tn.strip() for tn in w.tab_names.split(",")] if w.tab_names else ["Tab 1"]
-            self.canvas.create_rectangle(w.x + 10, w.y + 6, w.x + 90, w.y + 26, fill="#2563eb", outline="", tags=(tag,))
-            self.canvas.create_text(w.x + 50, w.y + 16, text=t_names[0], fill="#ffffff", font=("Segoe UI", 8, "bold"), tags=(tag,))
+            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#234764", width=2, tags=(tag, bg_tag))
+            self.canvas.create_text(w.x + w.width/2, w.y + w.height/2, text=t_names[0], fill="#ffffff", font=("Segoe UI", 8, "bold"), tags=(tag,))
         elif w.type == "Map":
-            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#1e293b", outline="#334155", width=2, tags=(tag, bg_tag))
-            self.canvas.create_text(w.x + w.width/2, w.y + w.height/2 - 10, text="[Mapa Leaflet]", fill="#38bdf8", font=("Segoe UI", 11, "bold"), tags=(tag,))
-            self.canvas.create_text(w.x + w.width/2, w.y + w.height/2 + 15, text=f"Lat: {w.map_lat}, Lng: {w.map_lng}", fill="#94a3b8", font=("Consolas", 9), tags=(tag,))
+            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#234764", width=2, tags=(tag, bg_tag))
+            self.canvas.create_text(w.x + w.width/2, w.y + w.height/2, text=f"{w.type}", fill="#38bdf8", font=("Segoe UI", 11, "bold"), tags=(tag,))
         elif w.type == "Compass":
-            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#0f172a", outline="#334155", width=2, tags=(tag, bg_tag))
-            cx, cy = w.x + w.width/2, w.y + w.height/2
-            r = min(w.width, w.height)/2 - 15
-            self.canvas.create_oval(cx-r, cy-r, cx+r, cy+r, outline="#1e293b", width=6, tags=(tag,))
-            self.canvas.create_text(cx, cy - r + 10, text="N", fill="#ef4444", font=("Segoe UI", 10, "bold"), tags=(tag,))
-            self.canvas.create_text(w.x + w.width/2, w.y - 10, text=f"Compass: {w.label}", fill=t["fg"], font=("Segoe UI", 9, "bold"), tags=(tag,))
+            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#234764", width=2, tags=(tag, bg_tag))
+            self.canvas.create_text(w.x + w.width/2, w.y + w.height/2, text=f"{w.type}", fill="#FFFFFF", font=("Segoe UI", 9, "bold"), tags=(tag,))
         elif w.type == "Knob":
-            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#0f172a", outline="#334155", width=2, tags=(tag, bg_tag))
-            cx, cy = w.x + w.width/2, w.y + w.height/2
-            kr = min(w.width, w.height)/2 - 20
-            self.canvas.create_oval(cx-kr, cy-kr, cx+kr, cy+kr, fill="#1e293b", outline="#334155", width=3, tags=(tag,))
-            self.canvas.create_oval(cx-3, cy-kr+5, cx+3, cy-kr+11, fill="#3b82f6", outline="", tags=(tag,))
-            self.canvas.create_text(cx-kr-15, cy+kr, text="0", fill="#94a3b8", font=("Segoe UI", 8, "bold"), tags=(tag,))
-            self.canvas.create_text(cx+kr+15, cy+kr, text="100", fill="#94a3b8", font=("Segoe UI", 8, "bold"), tags=(tag,))
-            self.canvas.create_text(w.x + w.width/2, w.y - 10, text=f"Knob: {w.label}", fill=t["fg"], font=("Segoe UI", 9, "bold"), tags=(tag,))
+            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#234764", width=2, tags=(tag, bg_tag))
+            self.canvas.create_text(w.x + w.width/2, w.y + w.height/2, text=f"{w.type}", fill="#FFFFFF", font=("Segoe UI", 9, "bold"), tags=(tag,))
         elif w.type == "SevenSegment":
-            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#000000", outline="#1e293b", width=2, tags=(tag, bg_tag))
-            num_d = int(w.seg_digits) if w.seg_digits and w.seg_digits.isdigit() else 4
-            
-            # Cargar imagen si PIL_AVAILABLE
-            img_path = "seg.png"
-            if PIL_AVAILABLE and os.path.exists(img_path):
-                print("PIL available")
-                try:
-                    # Guardamos referencias en el objeto para que el recolector de basura de Python no las borre
-                    if not hasattr(self, '_canvas_images'):
-                        self._canvas_images = {}
-                    pil_img = Image.open(img_path)
-                    # Calculamos el ancho por dígito si es un sprite de 5 columnas x 2 filas (ejemplo clásico de 7 segmentos)
-                    img_w, img_h = pil_img.size
-                    digit_w = img_w // 5
-                    digit_h = img_h // 2
-                    
-                    # Dibujamos de forma simulada los dígitos previos (ej: '8888') usando recortes del sprite o la imagen
-                    start_x = w.x + (w.width - (num_d * 28)) / 2
-                    for i in range(num_d):
-                        # Recortamos el dígito '8' (columna 4, fila 1 por defecto para pruebas) o el número correspondiente
-                        crop_box = (4 * digit_w, 1 * digit_h, 5 * digit_w, 2 * digit_h)
-                        sub_img = pil_img.crop(crop_box).resize((24, 45), Image.Resampling.NEAREST)
-                        
-                        tk_sub_img = ImageTk.PhotoImage(sub_img)
-                        img_key = f"{w.id}_dig_{i}"
-                        self._canvas_images[img_key] = tk_sub_img # Evita que el Garbage Collector borre la imagen
-                        
-                        self.canvas.create_image(start_x + (i * 28), w.y + w.height/2, image=tk_sub_img, anchor=tk.CENTER, tags=(tag,))
-                except Exception as e:
-                    print("Error cargand imagen: ", e)
-                    # Fallback a texto si ocurre algún error cargando la imagen
-                    preview_txt = " ".join(["8"] * num_d)
-                    self.canvas.create_text(w.x + w.width/2, w.y + w.height/2, text=preview_txt, fill="#f97316", font=("Consolas", 18, "bold"), tags=(tag,))
-            else:
-                # Fallback si PIL no está disponible o no existe la imagen
-                print("PIL not available")
-                preview_txt = " ".join(["8"] * num_d)
-                self.canvas.create_text(w.x + w.width/2, w.y + w.height/2, text=preview_txt, fill="#f97316", font=("Consolas", 18, "bold"), tags=(tag,))
-                
-            self.canvas.create_text(w.x + w.width/2, w.y + 12, text=f"7-Seg ({num_d} digitos)", fill="#64748b", font=("Segoe UI", 8), tags=(tag,))
+            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#234764", width=2, tags=(tag, bg_tag))
+            self.canvas.create_text(w.x + w.width/2, w.y + w.height/2, text=f"{w.type}", fill="#FFFFFF", font=("Segoe UI", 9, "bold"), tags=(tag,))
         elif w.type == "VerticalContainer":
-            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#0f172a", outline=w.color if w.color else "#334155", width=2, tags=(tag, bg_tag))
-            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+28, fill="#1e293b", outline="", tags=(tag,))
-            self.canvas.create_text(w.x + 15, w.y + 14, text=f"V-Container ({len(w.attached_widgets)} items): {w.label}", fill="#ffffff", font=("Segoe UI", 9, "bold"), anchor="w", tags=(tag,))
+            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#234764", outline=w.color if w.color else "#334155", width=2, tags=(tag, bg_tag))
+            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+28, fill="#234764", outline="", tags=(tag,))
+            self.canvas.create_text(w.x + w.width/2, w.y + w.height/2, text=f"{w.type}: {w.label}", fill="#FFFFFF", font=("Segoe UI", 9, "bold"), anchor="w", tags=(tag,))
         elif w.type == "HorizontalContainer":
-            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#0f172a", outline=w.color if w.color else "#334155", width=2, tags=(tag, bg_tag))
-            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+28, fill="#1e293b", outline="", tags=(tag,))
-            self.canvas.create_text(w.x + 15, w.y + 14, text=f"H-Container ({len(w.attached_widgets)} items): {w.label}", fill="#38bdf8", font=("Segoe UI", 9, "bold"), anchor="w", tags=(tag,))
+            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#234764", outline=w.color if w.color else "#334155", width=2, tags=(tag, bg_tag))
+            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+28, fill="#234764", outline="", tags=(tag,))
+            self.canvas.create_text(w.x + w.width/2, w.y + w.height/2, text=f"{w.type}: {w.label}", fill="#FFFFFF", font=("Segoe UI", 9, "bold"), anchor="w", tags=(tag,))
         elif w.type == "MatrixContainer":
-            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#0f172a", outline=w.color if w.color else "#334155", width=2, tags=(tag, bg_tag))
-            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+28, fill="#1e293b", outline="", tags=(tag,))
-            self.canvas.create_text(w.x + 15, w.y + 14, text=f"Matrix Grid ({len(w.attached_widgets)} items): {w.label}", fill="#10b981", font=("Segoe UI", 9, "bold"), anchor="w", tags=(tag,))
+            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#234764", outline=w.color if w.color else "#334155", width=2, tags=(tag, bg_tag))
+            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+28, fill="#234764", outline="", tags=(tag,))
+            self.canvas.create_text(w.x + w.width/2, w.y + w.height/2, text=f"{w.type}: {w.label}", fill="#FFFFFF", font=("Segoe UI", 9, "bold"), anchor="w", tags=(tag,))
+        
         elif w.type in self.custom_widget_types or (hasattr(self, 'custom_widget_classes') and w.type in self.custom_widget_classes):
             try:
                 # Busca la clase del plugin de forma segura
@@ -1455,7 +2564,7 @@ class IoTBuilderApp:
                         for k, v in w.props.items():
                             instance.default_props[k] = v
                             
-                    # 1. Ejecuta el render_canvas del plugin primero
+                    # Ejecuta el render_canvas del plugin primero
                     if hasattr(instance, "render_canvas"):
                         ids = instance.render_canvas(self.canvas, w.x, w.y)
                         if isinstance(ids, list):
@@ -1467,14 +2576,11 @@ class IoTBuilderApp:
                 print(f"Error render canvas {w.type}: {e}")
                 self.canvas.create_text(w.x + w.width/2, w.y + w.height/2, text="Error Plugin", fill="#ef4444", tags=(tag,))
             
-            # 2. Dibuja el marco de selección encima de todo lo demás
+            # Dibuja el marco de selección encima de todo lo demás
             is_selected = (self.selected == w or w in self.selected_widgets)
-            border_color = "#f59e0b" if is_selected else t["border"]
-            border_width = 2 if is_selected else 1
-            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="", outline=border_color, width=border_width, tags=(tag, bg_tag))
-
-            # Etiqueta de identificación superior
-            self.canvas.create_text(w.x + w.width/2, w.y - 10, text=f"Plugin: {w.type}", fill=t["accent"], font=("Segoe UI", 9, "bold"), tags=(tag,))
+            border_color = t["select"] if is_selected else t["border"]
+            border_width = 4 if is_selected else 1
+            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="", outline=border_color, width=border_width, tags=(tag, bg_tag), dash=(4, 4))
 
     def refresh_scripts_list(self):
         self.scripts_listbox.delete(0, tk.END)
@@ -1494,39 +2600,70 @@ class IoTBuilderApp:
             self.lbl_code_title.config(text=f"Editando archivo: events/{filename}")
             self.code_editor.delete("1.0", tk.END)
             self.code_editor.insert(tk.END, self.widget_event_codes.get(wid, ""))
+            self.syntax_highlight()
 
     def select_widget(self, w):
         if self.editing_wid and self.editing_wid in self.widget_event_codes:
             self.widget_event_codes[self.editing_wid] = self.code_editor.get("1.0", tk.END)
 
         self.selected = w
+        self.selected_widgets = [w] if w else []
+        self.canvas.focus_set()
         t = THEMES[self.current_theme]
         for widget in self.widgets:
-            self.canvas.itemconfig(f"bg_{widget.id}", outline=widget.color if widget.type in ["VerticalContainer","HorizontalContainer","MatrixContainer"] else t["border"], width=2 if widget.type in ["VerticalContainer","HorizontalContainer","MatrixContainer"] else 1)
-        
+            w_id = getattr(widget, 'id', '')
+            w_type = getattr(widget, 'type', '')
+            w_color = getattr(widget, 'color', '#3b82f6')
+            
+            self.canvas.itemconfig(  
+                f"bg_{w_id}",  
+                outline=(w_color if w_type in ["VerticalContainer", "HorizontalContainer", "MatrixContainer"] else t["border"]),
+                width=(2 if w_type in ["VerticalContainer", "HorizontalContainer", "MatrixContainer"] else 1),
+                dash="",  # Remueve el punteado de los widgets no seleccionados
+            )
+            
         if w:
-            # Cambia el color del borde a naranja sin mover la capa de fondo
-            self.canvas.itemconfig(f"bg_{w.id}", outline="#f59e0b", width=2)
-            self.var_id.set(w.id); self.var_label.set(w.label)
-            self.var_x.set(w.x); self.var_y.set(w.y)
-            self.var_w.set(w.width); self.var_h.set(w.height)
+            w_id = getattr(w, 'id', '')
+            # Cambia el color del borde a naranja y aplica la línea punteada
+            self.canvas.itemconfig(f"bg_{w_id}", outline=t["select"], width=3, dash=(4, 4))
+            self.var_id.set(w_id)
             
+            # Obtener la etiqueta de forma segura (Nativos usan w.label, Plugins usan w.props['label'])
+            label_val = getattr(w, 'label', None)
+            if label_val is None and hasattr(w, 'props') and isinstance(w.props, dict):
+                label_val = w.props.get('label', getattr(w, 'type', 'Widget'))
+            self.var_label.set(label_val or "")
+
+            self.var_x.set(getattr(w, 'x', 0))
+            self.var_y.set(getattr(w, 'y', 0))
+            self.var_w.set(getattr(w, 'width', 100))
+            self.var_h.set(getattr(w, 'height', 100))
+
             self.sync_vars_from_widget(w)
-            
-            if w.id in self.widget_event_codes:
-                self.editing_wid = w.id
-                self.lbl_code_title.config(text=f"Editando archivo: events/{w.id}.py")
+
+            if w_id in self.widget_event_codes:
+                self.editing_wid = w_id
+                self.lbl_code_title.config(
+                    text=f"Editando archivo: events/{w_id}.py"
+                )
                 self.code_editor.delete("1.0", tk.END)
-                self.code_editor.insert(tk.END, self.widget_event_codes[w.id])
+                self.code_editor.insert(tk.END, self.widget_event_codes[w_id])
             else:
                 self.editing_wid = None
-                self.lbl_code_title.config(text="Ningun archivo creado para este widget")
+                self.lbl_code_title.config(
+                    text="Ningun archivo creado para este widget"
+                )
                 self.code_editor.delete("1.0", tk.END)
-                self.code_editor.insert(tk.END, f"# Selecciona 'Connect' via Clic-Derecho en '{w.id}' para crear su archivo de eventos.\n")
+                self.code_editor.insert(
+                    tk.END,
+                    f"# Selecciona 'Connect' via Clic-Derecho en '{w_id}' para crear su archivo de eventos.\n",
+                )
         else:
             self.var_id.set("")
             self.editing_wid = None
-            self.lbl_code_title.config(text="(Ningun widget seleccionado ni archivo abierto)")
+            self.lbl_code_title.config(
+                text="(Ningun widget seleccionado ni archivo abierto)"
+            )
             self.code_editor.delete("1.0", tk.END)
 
         self.build_inspector_fields()
@@ -1535,36 +2672,62 @@ class IoTBuilderApp:
         w = self.selected
         if not w:
             return
-        # <-- NUEVO
+        
+        self.unsaved_changes = True
+        
+        # 1. Asegurar que el widget tenga un diccionario de propiedades
+        if not hasattr(w, 'props') or not isinstance(w.props, dict):
+            w.props = getattr(w, 'default_props', {}).copy()
+            
+        # 2. Capturar todas las variables personalizadas del inspector
         if hasattr(self, 'custom_prop_vars') and self.custom_prop_vars:
-            if not hasattr(w, 'props') or not isinstance(w.props, dict):
-                w.props = {}
             for p_name, p_var in self.custom_prop_vars.items():
-                w.props[p_name] = p_var.get()
+                val = p_var.get()
+                # Normalizar si viene de un SlideButton booleano o string
+                if isinstance(val, bool):
+                    w.props[p_name] = "True" if val else "False"
+                else:
+                    w.props[p_name] = str(val)
+
+        # 3. Capturar la etiqueta principal si el inspector la tiene
+        if hasattr(self, 'var_label'):
+            label_val = self.var_label.get()
+            w.props['label'] = label_val
+            if hasattr(w, 'label'):
+                w.label = label_val
+
         try:
             x, y = int(self.var_x.get()), int(self.var_y.get())
             ww, hh = int(self.var_w.get()), int(self.var_h.get())
         except ValueError:
             return
         
-        self.save_state()
-        old_color = w.color
-        w.label = self.var_label.get()
+        # Actualizar coordenadas y dimensiones en la instancia
         w.x, w.y, w.width, w.height = x, y, ww, hh
-        self.sync_widget_from_vars(w)
-        if not w.color:
-            w.color = old_color
 
-        if w.type in ["VerticalContainer", "HorizontalContainer", "MatrixContainer"]:
+        # Sincronizar colores u otros elementos estándar si aplican
+        if hasattr(self, 'sync_widget_from_vars'):
+            old_color = getattr(w, 'color', '#3b82f6')
+            self.sync_widget_from_vars(w)
+            if hasattr(w, 'color') and not w.color:
+                w.color = old_color
+
+        # 4. GUARDAR EL ESTADO DESPUÉS DE ACTUALIZAR TODAS LAS PROPS
+        self.save_state()
+
+        if hasattr(w, 'type') and w.type in ["VerticalContainer", "HorizontalContainer", "MatrixContainer"]:
             self.update_container_layout(w)
         else:
-            parent = self.get_parent_container(w.id)
+            parent = self.get_parent_container(getattr(w, 'id', ''))
             if parent:
                 self.update_container_layout(parent)
             else:
-                self.canvas.delete(f"wid_{w.id}")
+                self.canvas.delete(f"wid_{getattr(w, 'id', '')}")
                 self.draw_widget(w)
-                self.canvas.itemconfig(f"bg_{w.id}", outline="#f59e0b", width=2)
+                try:
+                    self.canvas.itemconfig(f"bg_{getattr(w, 'id', '')}", outline="#f59e0b", width=2)
+                except Exception:
+                    pass
 
     def copy_selection(self):
         if self.selected_widgets:
@@ -1579,6 +2742,7 @@ class IoTBuilderApp:
     def delete_selection(self):
         if self.selected_widgets:
             self.save_state()
+            self.unsaved_changes = True
             for w in self.selected_widgets:
                 parent = self.get_parent_container(w.id)
                 if parent and w.id in parent.attached_widgets:
@@ -1612,37 +2776,69 @@ class IoTBuilderApp:
         project_data = {
             "version": "4.5",
             "theme": self.current_theme,
-            "widgets": [w.to_dict() for w in self.widgets],
+            "widgets": [w.to_dict() for w in self.widgets], # <-- ¡Funciona para todos por igual!
             "event_codes": self.widget_event_codes
         }
+        
         try:
             with open(self.current_file_path, 'w', encoding='utf-8') as f:
                 json.dump(project_data, f, indent=4)
             messagebox.showinfo("Exito", "Proyecto guardado.")
-        except Exception as e: messagebox.showerror("Error", str(e))
+            self.unsaved_changes = False
+        except Exception as e: 
+            messagebox.showerror("Error", str(e))
 
     def load_project(self):
+        if self.unsaved_changes:
+            res = messagebox.askyesnocancel(
+                "Guardar cambios",
+                "Tienes cambios sin guardar. ¿Deseas guardarlos antes de cerrar el proyecto?",
+                parent=self.root
+            )
+            if res is True:  # Sí: intenta guardar y luego cierra
+                self.save_project() 
+        
         filepath = filedialog.askopenfilename(filetypes=[("JSON files", "*.json")])
         if not filepath: return
         try:
             with open(filepath, 'r', encoding='utf-8') as f: data = json.load(f)
             self.current_file_path = filepath
-            self.current_theme = data.get("theme", "dark")
+            
+            # Usar 'or' previene que si 'theme' es nulo en el JSON, falle la lectura
+            self.current_theme = data.get("theme") or "dark"
             self.theme_var.set(self.current_theme)
-            self.apply_theme()
+            
+            # Cargar datos y widgets primero
             self.widget_event_codes = data.get("event_codes", {})
             self.load_widgets_from_state(data.get("widgets", []))
             self.repair_all_events()
             self.refresh_scripts_list()
-        except Exception as e: messagebox.showerror("Error", str(e))
+            
+            # Aplicar el tema al final para sincronizar el canvas, inspector y colores limpios
+            self.apply_theme()
+            
+            self.unsaved_changes = False
+        except Exception as e: 
+            messagebox.showerror("Error", str(e))
 
     def export_flask_project(self):
         if self.editing_wid and self.editing_wid in self.widget_event_codes:
             self.widget_event_codes[self.editing_wid] = self.code_editor.get("1.0", tk.END)
         self.repair_all_events()
 
-        filepath = filedialog.asksaveasfilename(defaultextension=".zip", filetypes=[("ZIP files", "*.zip")], initialfile="iot_dashboard_pro.zip")
-        if not filepath: return
+        initial_name = "iot_dashboard_pro.zip"
+        if getattr(self, "current_file_path", None):
+            base_name = os.path.basename(self.current_file_path)
+            file_root, _ = os.path.splitext(base_name)
+            initial_name = f"{file_root}.zip"
+
+        filepath = filedialog.asksaveasfilename(
+            defaultextension=".zip", 
+            filetypes=[("ZIP files", "*.zip")], 
+            initialfile=initial_name
+        )
+        if not filepath: 
+            return
 
         # Procesamos los widgets para incluir el HTML de los plugins personalizados de forma directa
         processed_widgets = []
@@ -1667,6 +2863,13 @@ class IoTBuilderApp:
 
                     if target_cls:
                         instance = target_cls()
+                        
+                        # FIX: Asignar las propiedades actuales del widget a la instancia del plugin
+                        if hasattr(instance, "props"):
+                            instance.props = props.copy()
+                        else:
+                            setattr(instance, 'props', props.copy())
+
                         if hasattr(instance, "render_html"):
                             w_dict['custom_html'] = instance.render_html(w.id, props)
             except Exception as e:
@@ -1709,7 +2912,6 @@ class IoTBuilderApp:
             if os.path.exists("seg.png"):
                 with open("seg.png", "rb") as sf:
                     zf.writestr('static/seg.png', sf.read())
-
             html_code = """<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -1728,6 +2930,7 @@ class IoTBuilderApp:
     <div id="canvas" class="relative w-[3000px] h-[3000px]"></div>
     <script>
         const socket = io();
+        window.dashboardSocket = socket;
         socket.on('connect', () => console.log('socket conectado'));
         socket.on('connect_error', e => console.error('socket error', e));
 
@@ -1780,16 +2983,26 @@ class IoTBuilderApp:
                 container.appendChild(span);
             }
         }
-
+        
+        
+        
+        
+        
+        
         project.widgets.forEach(w => {
             const wrapper = document.createElement('div');
             wrapper.className = 'absolute flex flex-col items-center justify-center';
             wrapper.style.left = w.x + 'px'; wrapper.style.top = w.y + 'px';
             wrapper.style.width = w.width + 'px'; wrapper.style.height = w.height + 'px';
             wrapper.id = w.id;
-
+            
+            
+            
+            
+            //
+            // GENERATE HTML
+            //
             let innerHTML = ''; let props = w.props || {}; let events = w.events || {};
-
             if (w.type === 'Button') {
                 let color = props.color || '#3b82f6';
                 innerHTML += `<button id="el_${w.id}" class="w-full h-full font-bold rounded-xl text-white shadow-xl flex items-center justify-center cursor-pointer active:scale-95 transition-transform" style="background-color: ${color};">${props.label || 'Boton'}</button>`;
@@ -1798,17 +3011,28 @@ class IoTBuilderApp:
                 let offColor = props.toggle_off_color || '#64748b';
                 let onTxt = props.toggle_on_text || 'ON';
                 let offTxt = props.toggle_off_text || 'OFF';
-                innerHTML += `<div class="w-full h-full bg-slate-900 border border-slate-800 rounded-xl flex flex-col items-center justify-center p-2 shadow-lg">
-                                <span class="text-xs font-bold text-slate-400 mb-1">${props.label}</span>
-                                <label class="relative inline-flex items-center cursor-pointer select-none">
-                                    <input type="checkbox" id="el_${w.id}" class="sr-only peer">
-                                    <div id="ts_bg_${w.id}" class="w-16 h-8 rounded-full transition-colors duration-300 relative" style="background-color: ${offColor};">
-                                        <div id="ts_knob_${w.id}" class="absolute top-1 left-1 bg-white w-6 h-6 rounded-full transition-transform duration-300 shadow"></div>
-                                    </div>
-                                    <span id="ts_txt_${w.id}" class="ml-2 text-xs font-bold text-slate-200">${offTxt}</span>
-                                </label>
-                              </div>`;
-            } else if (w.type === 'Label') {
+
+                innerHTML += `
+                    <div class="w-full h-full flex items-center justify-center">
+                        <label class="relative inline-flex items-center cursor-pointer select-none">
+                            <input type="checkbox" id="el_${w.id}" class="sr-only peer">
+
+                            <div id="ts_bg_${w.id}"
+                                 class="w-16 h-8 rounded-full transition-colors duration-300 relative flex items-center"
+                                 style="background-color: ${offColor};">
+
+                                <span id="ts_txt_${w.id}"
+                                      class="absolute right-2 text-[10px] font-bold text-white">
+                                    ${offTxt}
+                                </span>
+
+                                <div id="ts_knob_${w.id}"
+                                     class="absolute top-1 left-1 bg-white w-6 h-6 rounded-full transition-transform duration-300 shadow">
+                                </div>
+                            </div>
+                        </label>
+                    </div>`;
+            }else if (w.type === 'Label') {
                 let shape = props.label_shape || 'Redondeada';
                 let bg = shape === 'Ninguna' ? 'transparent' : (props.label_bg_color || '#1e293b');
                 let radius = shape === 'Redondeada' ? '12px' : '0px';
@@ -1816,7 +3040,7 @@ class IoTBuilderApp:
             }else if (w.type === 'LED') {
                 let color = props.color || '#ef4444';
                 innerHTML += `<div id="el_${w.id}" class="w-10 h-10 rounded-full transition-all duration-300 cursor-pointer" style="background-color: #334155; box-shadow: none;"></div><span class="text-xs mt-2 text-slate-400">${props.label}</span>`;
-            }else if (w.type === 'Slider') {
+            } else if (w.type === 'Slider') {
                 innerHTML += `<input id="el_${w.id}" type="range" min="0" max="100" value="50" class="w-full accent-blue-500 cursor-pointer"><span class="text-xs mt-2 text-slate-400">${props.label}</span>`;
             } else if (w.type === 'CheckBox') {
                 innerHTML += `<label class="flex items-center gap-2 cursor-pointer font-semibold text-sm"><input id="el_${w.id}" type="checkbox" class="w-5 h-5 accent-blue-600 rounded cursor-pointer"> ${props.label}</label>`;
@@ -1886,31 +3110,34 @@ class IoTBuilderApp:
                     innerHTML += `<div class="w-full h-full bg-slate-900 border border-slate-800 rounded-xl flex flex-col items-center justify-center shadow-lg p-2"><div id="clock_${w.id}" class="font-mono text-3xl font-bold text-emerald-400 drop-shadow-[0_0_8px_rgba(52,211,153,0.8)]">12:00:00</div><span class="text-xs mt-2 text-slate-500 uppercase tracking-widest font-bold">${props.label || 'Reloj'}</span></div>`;
                 }
             } else if (w.type === 'SevenSegment') {
-                innerHTML += `<div class="w-full h-full bg-black border border-slate-800 rounded-xl flex flex-col items-center justify-center shadow-lg p-2 relative">
-                                <div id="seg_${w.id}" class="flex gap-1 items-center justify-center"></div>
-                              </div>`;
+                innerHTML += `<div class="bg-slate-900 border border-slate-700 rounded p-3 w-full h-full flex items-center justify-center cursor-pointer hover:bg-slate-800"><div id="seg_${w.id}" class="flex gap-1 items-center justify-center"></div></div>`;
             } else if (w.type === 'ProgressBar') {
                 let c = props.color || '#3b82f6';
                 innerHTML += `<div class="w-full h-full bg-slate-900 border border-slate-800 rounded-xl flex flex-col justify-center shadow-lg p-4"><div class="flex justify-between items-end mb-2"><span class="text-xs font-bold text-slate-300">${props.label}</span><span id="prog_val_${w.id}" class="text-sm font-bold" style="color:${c}">${props.prog_value || 50}%</span></div><div class="w-full h-4 bg-slate-800 rounded-full overflow-hidden shadow-inner border border-slate-700"><div id="prog_bar_${w.id}" class="h-full transition-all duration-300" style="width: ${props.prog_value || 50}%; background-color: ${c};"></div></div></div>`;
             } else if (w.type === 'Keyboard') {
                 innerHTML += `<div class="w-full h-full bg-slate-900 border border-slate-800 rounded-xl flex flex-col items-center justify-center shadow-lg p-2 gap-1.5 select-none">
+                                <div class="flex gap-1 justify-center w-full">${['1','2','3','4','5','6','7','8','9','0'].map(k=>`<button class="flex-1 py-2 bg-slate-800 hover:bg-slate-700 active:bg-blue-600 rounded text-white font-bold text-xs shadow">${k}</button>`).join('')}</div>
                                 <div class="flex gap-1 justify-center w-full">${['Q','W','E','R','T','Y','U','I','O','P'].map(k=>`<button class="flex-1 py-2 bg-slate-800 hover:bg-slate-700 active:bg-blue-600 rounded text-white font-bold text-xs shadow">${k}</button>`).join('')}</div>
                                 <div class="flex gap-1 justify-center w-full px-2">${['A','S','D','F','G','H','J','K','L'].map(k=>`<button class="flex-1 py-2 bg-slate-800 hover:bg-slate-700 active:bg-blue-600 rounded text-white font-bold text-xs shadow">${k}</button>`).join('')}</div>
                                 <div class="flex gap-1 justify-center w-full">${['Z','X','C','V','B','N','M'].map(k=>`<button class="flex-1 py-2 bg-slate-800 hover:bg-slate-700 active:bg-blue-600 rounded text-white font-bold text-xs shadow">${k}</button>`).join('')}</div>
-                                <div class="flex gap-1 justify-center w-full"><button class="px-4 py-1.5 bg-slate-700 rounded text-white font-bold text-xs">SPACE</button><button class="px-4 py-1.5 bg-blue-600 rounded text-white font-bold text-xs">ENTER</button></div>
+                                <div class="flex gap-1 justify-center w-full"><button class="px-4 py-1.5 bg-slate-700 hover:bg-slate-600 active:bg-blue-600 rounded text-white font-bold text-xs shadow">SPACE</button><button class="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 rounded text-white font-bold text-xs shadow">ENTER</button></div>
                               </div>`;
             } else if (w.type === 'StatusBar') {
-                innerHTML += `<div class="w-full h-full bg-slate-900 border border-slate-800 rounded-xl flex items-center justify-between shadow-lg p-4"><span class="text-sm font-bold text-slate-400">${props.label}</span><div class="flex items-center gap-2"><div class="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></div><span id="status_text_${w.id}" class="text-emerald-400 font-mono text-sm">En linea</span></div></div>`;
+                innerHTML += `<div class="w-full h-full bg-slate-900 border border-slate-800 rounded-xl flex items-center justify-center shadow-lg p-4"><div class="flex items-center gap-2"><div id="status_dot_${w.id}" class="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></div><span id="status_text_${w.id}" class="text-emerald-400 font-mono text-sm">Online</span></div></div>`;
+            } else if(w.type === 'HorizontalContainer') {
+                innerHTML += `<div id="el_${w.id}" class="bg-transparent border border-slate-700 rounded p-3 w-full h-full flex items-center justify-center cursor-pointer"></div>`;
+            }  else if(w.type === 'VerticalContainer') {
+                innerHTML += `<div id="el_${w.id}" class="bg-transparent border border-slate-700 rounded p-3 w-full h-full flex items-center justify-center cursor-pointer"></div>`;
+            }  else if(w.type === 'MatrixContainer') {
+                innerHTML += `<div id="el_${w.id}" class="bg-transparent border border-slate-700 rounded p-3 w-full h-full flex items-center justify-center cursor-pointer"></div>`;
             } else if (w.custom_html) {
                 innerHTML += w.custom_html;
             } else {
                 innerHTML += `<div id="el_${w.id}" class="bg-slate-900 border border-slate-700 rounded p-3 w-full h-full flex items-center justify-center text-slate-300 text-xs font-bold cursor-pointer hover:bg-slate-800">${props.label || w.type}</div>`;
             }
-
             wrapper.innerHTML = innerHTML;
             canvas.appendChild(wrapper);
-
-            // FIX 2: innerHTML no ejecuta los <script>. Los recreamos DESPUÉS de appendChild
+            // FIX 2: innerHTML no ejecuta los <script>. Los agregamos despues de appendChild
             // para que document.getElementById ya encuentre los elementos del widget.
             if (w.custom_html) {
                 wrapper.querySelectorAll('script').forEach(old => {
@@ -1920,22 +3147,51 @@ class IoTBuilderApp:
                 });
             }
 
-            if (w.type === 'SevenSegment') { updateSegmentDisplay(`seg_${w.id}`, '1234', props.seg_digits); }
 
+
+
+
+
+
+            //
+            // EVEN HANDLER
+            //
+            if (w.type === 'SevenSegment') { updateSegmentDisplay(`seg_${w.id}`, '1234', props.seg_digits); }
             if (w.type === 'ToggleSwitch') {
                 const chk = document.getElementById(`el_${w.id}`);
                 const bg = document.getElementById(`ts_bg_${w.id}`);
                 const knob = document.getElementById(`ts_knob_${w.id}`);
                 const txt = document.getElementById(`ts_txt_${w.id}`);
+
                 const paint = (on) => {
-                    bg.style.backgroundColor = on ? (props.toggle_on_color || '#22c55e') : (props.toggle_off_color || '#64748b');
-                    knob.style.transform = on ? 'translateX(32px)' : 'translateX(0px)';
-                    txt.innerText = on ? (props.toggle_on_text || 'ON') : (props.toggle_off_text || 'OFF');
+                    bg.style.backgroundColor = on
+                        ? (props.toggle_on_color || '#22c55e')
+                        : (props.toggle_off_color || '#64748b');
+
+                    knob.style.transform = on
+                        ? 'translateX(32px)'
+                        : 'translateX(0px)';
+
+                    txt.innerText = on
+                        ? (props.toggle_on_text || 'ON')
+                        : (props.toggle_off_text || 'OFF');
+
+                    // OFF permanece a la derecha; ON pasa a la izquierda
+                    txt.classList.toggle('left-2', on);
+                    txt.classList.toggle('right-2', !on);
                 };
+
                 if (chk) {
                     chk._paint = paint;
-                    chk.addEventListener('click', e => emitEvent(w, 'on_click', e.target.checked));
-                    chk.addEventListener('change', e => { paint(e.target.checked); emitEvent(w, 'on_value_change', e.target.checked); });
+
+                    chk.addEventListener('click', e =>
+                        emitEvent(w, 'on_click', e.target.checked)
+                    );
+
+                    chk.addEventListener('change', e => {
+                        paint(e.target.checked);
+                        emitEvent(w, 'on_value_change', e.target.checked);
+                    });
                 }
             }
 
@@ -1957,7 +3213,6 @@ class IoTBuilderApp:
                     el.addEventListener('click', () => emitEvent(w, 'on_click', true));
                 }
             }
-
             if (w.type === 'Knob') {
                 let knobBody = document.getElementById(`knob_body_${w.id}`);
                 let isDragging = false, lastVal = null;
@@ -1975,13 +3230,11 @@ class IoTBuilderApp:
                     if (val !== lastVal) { lastVal = val; emitEvent(w, 'on_value_change', val); }
                 });
             }
-
             if (w.type === 'Keyboard') {
                 wrapper.querySelectorAll('button').forEach(btn => {
                     btn.addEventListener('click', e => emitEvent(w, 'on_key_pressed', e.target.innerText));
                 });
             }
-
             if (w.type === 'Map') {
                 let lat = parseFloat(props.map_lat) || 20.6597; let lng = parseFloat(props.map_lng) || -103.3496; let zoom = parseInt(props.map_zoom) || 13;
                 let map = L.map(`map_${w.id}`).setView([lat, lng], zoom);
@@ -2018,7 +3271,14 @@ class IoTBuilderApp:
                 }
             });
         }, 1000);
-
+        
+        
+        
+        
+        
+        //
+        // SOCKET UPDATE
+        //
         socket.on('update', function(data) {
             const wid = data.id; const val = data.value;
             const w = project.widgets.find(x => x.id === wid);
@@ -2060,7 +3320,19 @@ class IoTBuilderApp:
                 if (pb) pb.style.width = val + '%';
                 if (pv) pv.innerText = val + '%';
             }
-            else if (w.type === 'StatusBar') { const st = document.getElementById(`status_text_${wid}`); if (st) st.innerText = val; }
+            else if (w.type === 'StatusBar') {
+                const st = document.getElementById(`status_text_${wid}`);
+                const dot = document.getElementById(`status_dot_${wid}`);
+                const isOnline = String(val).toLowerCase() === 'online' || val === true || String(val).toLowerCase() === 'true';
+                
+                if (st) {
+                    st.innerText = isOnline ? 'Online' : 'Offline';
+                    st.className = isOnline ? "text-emerald-400 font-mono text-sm" : "text-rose-400 font-mono text-sm";
+                }
+                if (dot) {
+                    dot.className = isOnline ? "w-3 h-3 rounded-full bg-emerald-500 animate-pulse" : "w-3 h-3 rounded-full bg-rose-500";
+                }
+            }
             else if (w.type === 'Compass') { const cn = document.getElementById(`compass_needle_${wid}`); if (cn) cn.style.transform = `rotate(${val}deg)`; }
             // FIX 5: typo "degisComposite" en el CSS de rotación del Knob
             else if (w.type === 'Knob') { const kn = document.getElementById(`knob_body_${wid}`); if (kn) { let ang = -135 + (val * 2.7); kn.style.transform = `rotate(${ang}deg)`; } }
@@ -2081,7 +3353,11 @@ class IoTBuilderApp:
                 }
             }
         });
-
+        
+        
+        //
+        // SOCKET PROPERTIES UPDATE
+        //
         socket.on('prop_update', function(data) {
             const wid = data.id; const prop = data.prop; const val = data.value;
             const wrapper = document.getElementById(wid);
@@ -2123,7 +3399,31 @@ class IoTBuilderApp:
         print("[export] archivos:", report)
 
         with open(filepath, "wb") as f: f.write(memory_file.getvalue())
-        messagebox.showinfo("Exito", f"Exportado en:\n{filepath}\n\n" + ("\n".join(report) or "Sin scripts de eventos"))
+        
+        if messagebox.askyesno("Extraer proyecto", "¿Deseas extraer el archivo ZIP exportado?"):    
+            # Definimos la carpeta de destino (por ejemplo, una carpeta con el mismo nombre del ZIP sin la extensión)
+            extract_folder = os.path.splitext(filepath)[0]
+            
+            # Comprobar si ya existe el proyecto/carpeta extraída
+            proceder_extraccion = True
+            if os.path.exists(extract_folder):
+                # 3. Preguntar si desea sustituirlo
+                reemplazar = messagebox.askyesno(
+                    "Proyecto existente", 
+                    f"Ya existe una carpeta o archivo con el nombre '{os.path.basename(extract_folder)}'.\n¿Deseas sustituirlo?"
+                )
+                if not reemplazar:
+                    proceder_extraccion = False
+
+            # 4. Extraer si el usuario aceptó
+            if proceder_extraccion:
+                try:
+                    with zipfile.ZipFile(filepath, 'r') as zip_ref:
+                        zip_ref.extractall(extract_folder)
+                    messagebox.showinfo("Éxito", f"Proyecto extraído correctamente en:\n{extract_folder}")
+                except Exception as e:
+                    messagebox.showerror("Error de extracción", f"No se pudo extraer el archivo:\n{str(e)}")
+        # messagebox.showinfo("Exito", f"Exportado en:\n{filepath}\n\n" + ("\n".join(report) or "Sin scripts de eventos"))
 
 if __name__ == '__main__':
     root = tk.Tk()
