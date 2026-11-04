@@ -6,21 +6,23 @@ import re
 
 class TimerEvent:
     default_props = {
+        "label": "Temporizador",
         "period_ms": "1000",
-        "autostart": "True"
+        "autostart": "True",
     }
 
     custom_properties = [
+        {"name": "label", "label": "Título del Temporizador:", "type": "text"},
         {
             "name": "period_ms",
             "label": "Periodo del temporizador (ms):",
-            "type": "text"
+            "type": "text",
         },
         {
             "name": "autostart",
-            "label": "Iniciar automáticamente (True/False):",
-            "type": "text"
-        }
+            "label": "Iniciar automáticamente:",
+            "type": "boolean",
+        },
     ]
 
     supported_events = ["on_timer"]
@@ -28,24 +30,43 @@ class TimerEvent:
     def __init__(self, width=1, height=1):
         self.width = width
         self.height = height
-
+        self.props = self.default_props.copy()
+    
+    def to_dict(self):
+        return {
+            "id": getattr(self, 'id', "w_0"),
+            "type": getattr(self, 'type', self.__class__.__name__),
+            "x": getattr(self, 'x', 50),
+            "y": getattr(self, 'y', 50),
+            "width": getattr(self, 'width', getattr(self, 'default_props', {}).get('width', 300)),
+            "height": getattr(self, 'height', getattr(self, 'default_props', {}).get('height', 150)),
+            # IMPORTANTE: Aseguramos que se guarde el diccionario de propiedades actual de la instancia
+            "props": getattr(self, 'props', {}),
+            "events": getattr(self, 'events', {})
+        }
+        
     def render_canvas(self, canvas, x, y):
         # Widget invisible en el diseñador.
-        return []
+        box=canvas.create_rectangle(x, y, x+self.width, y+self.height, fill="#234764", outline="#334155", width=1)
+        text=canvas.create_text(x+self.width/2, y + self.height/2, text="TimerEvent", fill="#ffffff", font=("Segoe UI", 9))
+        return [box,text]
 
     def render_html(self, w_id, props):
+        # Unificar propiedades de forma segura para evitar errores si props es None
+        p = {**self.default_props, **(props or {})}
+
         orig_id = str(w_id)
         safe_id = re.sub(r"\W", "_", orig_id)
 
         try:
             period_ms = max(
-                1, int(props.get("period_ms", 1000))
+                1, int(p.get("period_ms", self.default_props.get("period_ms", 1000)))
             )
         except (ValueError, TypeError):
             period_ms = 1000
 
         autostart = str(
-            props.get("autostart", "True")
+            p.get("autostart", self.default_props.get("autostart", "True"))
         ).strip().lower() not in (
             "false", "0", "no", "off"
         )
@@ -70,10 +91,7 @@ class TimerEvent:
             function emitTick() {{
                 if (typeof emitEvent === "function") {{
                     emitEvent(
-                        {{
-                            id: cfg.id,
-                            events: {{on_timer: true}}
-                        }},
+                        {{ id: cfg.id }},
                         "on_timer",
                         {{
                             period_ms: period,

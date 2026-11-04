@@ -6,15 +6,22 @@ import re
 class ScrollList:
     default_props = {
         "label": "ScrollList",
-        "scroll_rows": "12, 13, 14, 15, 16 | February, March, April, May, June | 2018, 2019, 2020, 2021, 2022",
+        "scroll_rows": (
+            "12, 13, 14, 15, 16 | February, March, April, May, June | 2018, 2019,"
+            " 2020, 2021, 2022"
+        ),
         "scroll_cols": "Día, Mes, Año",
-        "accent_color": "#38a1ff"
+        "accent_color": "#38a1ff",
     }
 
     custom_properties = [
-        {"name": "scroll_rows", "label": "Filas (separa columnas con '|'):", "type": "text"},
-        {"name": "scroll_cols", "label": "Encabezados (separados por coma):", "type": "text"},
-        {"name": "accent_color", "label": "Color de Selección:", "type": "color"}
+        {"name": "label", "label": "Título:", "type": "text"},
+        {
+            "name": "scroll_rows",  # Usaremos esta variable para almacenar la tabla completa
+            "label": "Filas/Columnas",
+            "type": "table",
+        },
+        {"name": "accent_color", "label": "Color de Selección:", "type": "color"},
     ]
 
     supported_events = ["on_value_change", "on_click"]
@@ -22,29 +29,46 @@ class ScrollList:
     def __init__(self, width=280, height=180):
         self.width = width
         self.height = height
-
+        self.props = self.default_props.copy()
+    
+    def to_dict(self):
+        return {
+            "id": getattr(self, 'id', "w_0"),
+            "type": getattr(self, 'type', self.__class__.__name__),
+            "x": getattr(self, 'x', 50),
+            "y": getattr(self, 'y', 50),
+            "width": getattr(self, 'width', getattr(self, 'default_props', {}).get('width', 300)),
+            "height": getattr(self, 'height', getattr(self, 'default_props', {}).get('height', 150)),
+            # IMPORTANTE: Aseguramos que se guarde el diccionario de propiedades actual de la instancia
+            "props": getattr(self, 'props', {}),
+            "events": getattr(self, 'events', {})
+        }
+        
     def render_canvas(self, canvas, x, y):
         # Marco exterior
-        box = canvas.create_rectangle(x, y, x + self.width, y + self.height, fill='#111827', outline='#1f2937', width=2)
+        box = canvas.create_rectangle(x, y, x + self.width, y + self.height, fill='#234764', outline='#1f2937', width=2)
         # Tres tambores separados
-        gap = 4
-        col_w = (self.width - 12 - gap * 2) / 3
-        for i in range(3):
-            cx = x + 6 + i * (col_w + gap)
-            canvas.create_rectangle(cx, y + 6, cx + col_w, y + self.height - 6, fill='#e5e5e5', outline='#111111', width=2)
+        # gap = 4
+        # col_w = (self.width - 12 - gap * 2) / 3
+        # for i in range(3):
+            # cx = x + 6 + i * (col_w + gap)
+            # canvas.create_rectangle(cx, y + 6, cx + col_w, y + self.height - 6, fill='#e5e5e5', outline='#111111', width=2)
         # Franja de selección
-        pill = canvas.create_rectangle(x + 6, y + self.height / 2 - 18, x + self.width - 6, y + self.height / 2 + 18, fill='', outline='#ffffff', width=2)
+        # pill = canvas.create_rectangle(x + 6, y + self.height / 2 - 18, x + self.width - 6, y + self.height / 2 + 18, fill='', outline='#ffffff', width=2)
         # Texto de vista previa
-        txt_d = canvas.create_text(x + self.width / 6, y + self.height / 2, text='14', fill='#38a1ff', font=('Segoe UI', 11, 'bold'))
-        txt_m = canvas.create_text(x + self.width / 2, y + self.height / 2, text='April', fill='#38a1ff', font=('Segoe UI', 11, 'bold'))
-        txt_a = canvas.create_text(x + (self.width / 6) * 5, y + self.height / 2, text='2020', fill='#38a1ff', font=('Segoe UI', 11, 'bold'))
-        return [box, pill, txt_d, txt_m, txt_a]
+        # txt_d = canvas.create_text(x + self.width / 6, y + self.height / 2, text='14', fill='#38a1ff', font=('Segoe UI', 11, 'bold'))
+        # txt_m = canvas.create_text(x + self.width / 2, y + self.height / 2, text='April', fill='#38a1ff', font=('Segoe UI', 11, 'bold'))
+        txt_a = canvas.create_text(x + (self.width / 2), y + self.height / 2, text='ScrollList', fill='#ffffff', font=('Segoe UI', 11, 'bold'))
+        return [box, txt_a]
 
     def render_html(self, w_id, props):
-        label = props.get('label') or 'ScrollList'
-        rows_raw = props.get('scroll_rows') or self.default_props["scroll_rows"]
-        cols_raw = props.get('scroll_cols') or self.default_props["scroll_cols"]
-        accent = props.get('accent_color') or self.default_props["accent_color"]
+        # 1. Unificar propiedades de forma segura (evita errores si props es None y respeta cambios vacíos si se desea)
+        p = {**self.default_props, **(props or {})}
+
+        label = p.get('label', 'ScrollList')
+        rows_raw = p.get('scroll_rows', "") or self.default_props.get("scroll_rows", "")
+        cols_raw = p.get('scroll_cols', "") or self.default_props.get("scroll_cols", "")
+        accent = p.get('accent_color', "#3b82f6")
 
         orig_id = str(w_id)
         w_id = re.sub(r'\W', '_', orig_id)
@@ -54,7 +78,7 @@ class ScrollList:
         if not cols:
             cols = ["Col 1", "Col 2", "Col 3"]
 
-        raw_parts = [p.strip() for p in str(rows_raw).split('|')]
+        raw_parts = [part.strip() for part in str(rows_raw).split('|')]
         items_per_col = []
         for i in range(len(cols)):
             if i < len(raw_parts) and raw_parts[i]:
@@ -69,12 +93,12 @@ class ScrollList:
         items_per_col_json = json.dumps(items_per_col)
 
         # Eventos activados para este widget (por defecto TODOS desactivados)
-        events_cfg = props.get('events') or {}
+        events_cfg = p.get('events', {})
         if not isinstance(events_cfg, dict):
             events_cfg = {}
 
         def _is_on(name):
-            v = events_cfg.get(name, props.get(name, False))
+            v = events_cfg.get(name, p.get(name, False))
             if isinstance(v, str):
                 return v.strip().lower() in ('1', 'true', 'yes', 'si', 'sí', 'on')
             return bool(v)

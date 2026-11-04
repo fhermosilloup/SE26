@@ -26,8 +26,8 @@ class MapLive:
         },
         {
             "name": "show_marker",
-            "label": "Mostrar marcador (True/False):",
-            "type": "text",
+            "label": "Mostrar marcador:",
+            "type": "boolean",  # Cambiado de "text" a "boolean" para mostrar un menú desplegable True/False
         },
         {"name": "max_points", "label": "Máximo de puntos:", "type": "text"},
     ]
@@ -37,14 +37,28 @@ class MapLive:
     def __init__(self, width=360, height=260):
         self.width = width
         self.height = height
-
+        self.props = self.default_props.copy()
+    
+    def to_dict(self):
+        return {
+            "id": getattr(self, 'id', "w_0"),
+            "type": getattr(self, 'type', self.__class__.__name__),
+            "x": getattr(self, 'x', 50),
+            "y": getattr(self, 'y', 50),
+            "width": getattr(self, 'width', getattr(self, 'default_props', {}).get('width', 300)),
+            "height": getattr(self, 'height', getattr(self, 'default_props', {}).get('height', 150)),
+            # IMPORTANTE: Aseguramos que se guarde el diccionario de propiedades actual de la instancia
+            "props": getattr(self, 'props', {}),
+            "events": getattr(self, 'events', {})
+        }
+        
     def render_canvas(self, canvas, x, y):
         box = canvas.create_rectangle(
             x,
             y,
             x + self.width,
             y + self.height,
-            fill="#0f172a",
+            fill="#234764",
             outline="#334155",
             width=2,
         )
@@ -53,7 +67,7 @@ class MapLive:
             x + self.width / 2,
             y + 14,
             text="MapLive",
-            fill="#e2e8f0",
+            fill="#ffffff",
             font=("Segoe UI", 10, "bold"),
         )
 
@@ -63,33 +77,35 @@ class MapLive:
         orig_id = str(w_id)
         safe_id = re.sub(r"\W", "_", orig_id)
 
-        label = str(props.get("label", "Mapa en vivo"))
-        color = str(props.get("plot_color", "#3b82f6"))
+        label = str(props.get("label", self.default_props.get("label", "Mapa en vivo")))
+        color = str(props.get("plot_color", self.default_props.get("plot_color", "#3b82f6")))
 
         try:
-            lat = float(props.get("latitude", 20.6597))
-            lon = float(props.get("longitude", -103.3496))
+            lat = float(props.get("latitude", self.default_props.get("latitude", 20.6597)))
+            lon = float(props.get("longitude", self.default_props.get("longitude", -103.3496)))
             if not (-90 <= lat <= 90 and -180 <= lon <= 180):
                 raise ValueError
         except (ValueError, TypeError):
             lat, lon = 20.6597, -103.3496
 
         try:
-            zoom = max(1, min(19, int(props.get("zoom", 15))))
+            zoom = max(1, min(19, int(props.get("zoom", self.default_props.get("zoom", 15)))))
         except (ValueError, TypeError):
             zoom = 15
 
         try:
-            max_points = max(2, int(props.get("max_points", 1000)))
+            max_points = max(2, int(props.get("max_points", self.default_props.get("max_points", 1000))))
         except (ValueError, TypeError):
             max_points = 1000
 
-        show_marker = str(props.get("show_marker", "True")).lower() not in (
+        show_marker_val = props.get("show_marker", self.default_props.get("show_marker", "True"))
+        show_marker = str(show_marker_val).lower() not in (
             "false",
             "0",
             "no",
             "off",
         )
+        print("MapLive $ ShowMarker=", show_marker)
 
         cfg = json.dumps(
             {

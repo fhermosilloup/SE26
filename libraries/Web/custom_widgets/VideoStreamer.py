@@ -10,15 +10,45 @@ class VideoStreamer:
         "label": "Video Stream",
         "background": "#020617",
         "fit": "contain",
-        "show_status": True
+        "show_status": "True",
     }
+
+    custom_properties = [
+        {"name": "label", "label": "Título del Widget:", "type": "text"},
+        {"name": "background", "label": "Color de fondo:", "type": "color"},
+        {
+            "name": "fit",
+            "label": "Ajuste de imagen (Fit):",
+            "type": "select",
+            "options": ["contain", "cover", "fill"],
+        },
+        {
+            "name": "show_status",
+            "label": "Mostrar estado:",
+            "type": "boolean",
+        },
+    ]
 
     supported_events = ["on_click"]
 
     def __init__(self, width=320, height=240):
         self.width = width
         self.height = height
-
+        self.props = self.default_props.copy()
+    
+    def to_dict(self):
+        return {
+            "id": getattr(self, 'id', "w_0"),
+            "type": getattr(self, 'type', self.__class__.__name__),
+            "x": getattr(self, 'x', 50),
+            "y": getattr(self, 'y', 50),
+            "width": getattr(self, 'width', getattr(self, 'default_props', {}).get('width', 300)),
+            "height": getattr(self, 'height', getattr(self, 'default_props', {}).get('height', 150)),
+            # IMPORTANTE: Aseguramos que se guarde el diccionario de propiedades actual de la instancia
+            "props": getattr(self, 'props', {}),
+            "events": getattr(self, 'events', {})
+        }
+        
     def render_canvas(self, canvas, x, y):
         """Vista previa del widget en el diseñador Tkinter."""
         box = canvas.create_rectangle(
@@ -53,21 +83,29 @@ class VideoStreamer:
 
     def render_html(self, w_id, props):
         """Renderizado del streaming en el dashboard web."""
+        # 1. Unificar con default_props para proteger contra nulos y mantener consistencia
+        p = {**self.default_props, **(props or {})}
+
         label = html.escape(
-            str(props.get("label", "Video Stream"))
+            str(p.get("label", self.default_props.get("label", "Video Stream")))
         )
         background = html.escape(
-            str(props.get("background", "#020617")),
+            str(p.get("background", self.default_props.get("background", "#020617"))),
             quote=True
         )
 
-        fit = props.get("fit", "contain")
+        fit = p.get("fit", self.default_props.get("fit", "contain"))
         if fit not in ("contain", "cover", "fill"):
             fit = "contain"
 
-        show_status = (
-            "true" if props.get("show_status", True) else "false"
-        )
+        # 2. Evaluación robusta de booleano (soporta tanto bool real como strings "True"/"False")
+        raw_status = p.get("show_status", self.default_props.get("show_status", True))
+        if isinstance(raw_status, str):
+            is_active = raw_status.strip().lower() not in ("false", "0", "no", "off")
+        else:
+            is_active = bool(raw_status)
+
+        show_status = "true" if is_active else "false"
 
         return f"""
         <div id="video_container_{w_id}"

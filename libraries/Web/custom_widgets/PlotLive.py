@@ -24,13 +24,13 @@ class PlotLive:
         },
         {
             "name": "show_legend",
-            "label": "Mostrar leyenda (True/False):",
-            "type": "text",
+            "label": "Mostrar leyenda:",
+            "type": "boolean",  # Cambiado a boolean para selector True/False
         },
         {
             "name": "fill_area",
-            "label": "Rellenar área (True/False):",
-            "type": "text",
+            "label": "Rellenar área:",
+            "type": "boolean",  # Cambiado a boolean para selector True/False
         },
         {
             "name": "y_min",
@@ -49,38 +49,39 @@ class PlotLive:
     def __init__(self, width=360, height=220):
         self.width = width
         self.height = height
-
+        self.props = self.default_props.copy()
+    
+    def to_dict(self):
+        return {
+            "id": getattr(self, 'id', "w_0"),
+            "type": getattr(self, 'type', self.__class__.__name__),
+            "x": getattr(self, 'x', 50),
+            "y": getattr(self, 'y', 50),
+            "width": getattr(self, 'width', getattr(self, 'default_props', {}).get('width', 300)),
+            "height": getattr(self, 'height', getattr(self, 'default_props', {}).get('height', 150)),
+            # IMPORTANTE: Aseguramos que se guarde el diccionario de propiedades actual de la instancia
+            "props": getattr(self, 'props', {}),
+            "events": getattr(self, 'events', {})
+        }
+        
     def render_canvas(self, canvas, x, y):
         box = canvas.create_rectangle(
             x,
             y,
             x + self.width,
             y + self.height,
-            fill="#0f172a",
+            fill="#234764",
             outline="#1e293b",
             width=2,
         )
-
-        pts = [0.7, 0.45, 0.6, 0.25, 0.4, 0.15, 0.3]
-        step = (self.width - 36) / (len(pts) - 1)
-        coords = []
-        for i, p in enumerate(pts):
-            coords += [
-                x + 18 + i * step,
-                y + 14 + p * (self.height - 28),
-            ]
-
-        line = canvas.create_line(
-            *coords, fill="#3b82f6", width=3, smooth=True
-        )
         txt = canvas.create_text(
             x + self.width / 2,
-            y + 12,
+            y + self.height / 2,
             text="Plot",
-            fill="#94a3b8",
+            fill="#ffffff",
             font=("Segoe UI", 9, "bold"),
         )
-        return [box, line, txt]
+        return [box, txt]
 
     def render_html(self, w_id, props):
         label = props.get("label") or self.default_props["label"]
