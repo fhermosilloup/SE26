@@ -1,9 +1,11 @@
 import socket, struct, cv2, time
 
 # Socket
+IP_DESTINO = "192.168.1.6"
+PORT = 5000
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-sockdest = ("192.168.1.6", 5000)
+sockdest = (IP_DESTINO, PORT)
 
 # Camera
 cap = cv2.VideoCapture(0)
@@ -13,11 +15,11 @@ cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
 cap.set(cv2.CAP_PROP_CONVERT_RGB, 0)                            # opencv entrega datos crudos de la cámara
 
 _, frame = cap.read()
-print(frame.shape)
 
 # Packet parameters
 CHUNK_SIZE = 1400
 frame_id = 0
+print("Streaming...")
 while True:
     ret, frame = cap.read()
     if not ret:
