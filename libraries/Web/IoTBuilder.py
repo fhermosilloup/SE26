@@ -59,15 +59,136 @@ WIDGET_EVENTS_MAP = {
     "Label": ["on_click", "on_update"],
     "Keyboard": ["on_key_pressed"],
     "Knob": ["on_value_change"],
-    "Map": ["on_click", "on_update"],
     "LED": ["on_update", "on_click"],
     "Gauge": ["on_update"],
     "Clock": ["on_update"],
     "Compass": ["on_update"],
     "SevenSegment": ["on_update"],
-    "ProgressBar": ["on_update"],
-    "Plot": ["on_update"],
-    "UDPStream": ["on_video_click"]
+    "ProgressBar": ["on_update"]
+}
+
+
+# Ayuda de ui.set_value() por tipo de widget. {id} se reemplaza por el ID real del widget.
+WIDGET_VALUE_HELP = {
+    "LED": {
+        "tipo": "Boolean",
+        "valores": "True / False",
+        "desc": "True enciende el LED con resplandor del color configurado. False lo apaga (gris).",
+        "ejemplos": ["ui.set_value('{id}', True)", "ui.set_value('{id}', False)"],
+        "envia": "on_click a True",
+        "notas": ["Usa booleanos reales. El string \"False\" se interpreta como verdadero en JavaScript."],
+    },
+    "CheckBox": {
+        "tipo": "Boolean",
+        "valores": "True / False",
+        "desc": "Marca (True) o desmarca (False) la casilla.",
+        "ejemplos": ["ui.set_value('{id}', True)"],
+        "envia": "on_click / on_value_change a bool",
+        "notas": ["Usa booleanos reales, no strings."],
+    },
+    "ToggleSwitch": {
+        "tipo": "Boolean",
+        "valores": "True / False",
+        "desc": "Pone el switch en ON (True) u OFF (False). Repinta color, knob y texto.",
+        "ejemplos": ["ui.set_value('{id}', True)"],
+        "envia": "on_click / on_value_change a bool",
+        "notas": ["Usa booleanos reales, no strings."],
+    },
+    "Slider": {
+        "tipo": "Number",
+        "valores": "0 a 100",
+        "desc": "Mueve el control deslizante a la posición indicada.",
+        "ejemplos": ["ui.set_value('{id}', 75)"],
+        "envia": "on_value_change a número",
+        "notas": ["El slider del navegador tiene min=0 y max=100."],
+    },
+    "Knob": {
+        "tipo": "Number",
+        "valores": "0 a 100",
+        "desc": "Gira la perilla de -135° (0) a +135° (100).",
+        "ejemplos": ["ui.set_value('{id}', 50)"],
+        "envia": "on_value_change a número",
+        "notas": [],
+    },
+    "Gauge": {
+        "tipo": "Number",
+        "valores": "0 a 100 (se limita a ese rango)",
+        "desc": "Tacómetro: rota la aguja de -120° a +120°. Circular: rellena el arco y muestra el número.",
+        "ejemplos": ["ui.set_value('{id}', 80)"],
+        "envia": "(solo on_update)",
+        "notas": ["Valores fuera de 0-100 se recortan."],
+    },
+    "ProgressBar": {
+        "tipo": "Number",
+        "valores": "0 a 100",
+        "desc": "Llena la barra y muestra el valor como porcentaje.",
+        "ejemplos": ["ui.set_value('{id}', 60)"],
+        "envia": "(solo on_update)",
+        "notas": ["No se limita el rango: 150 se mostraría como 150%."],
+    },
+    "Compass": {
+        "tipo": "Number",
+        "valores": "0 a 360 (grados)",
+        "desc": "Rota la aguja. 0 = N, 90 = E, 180 = S, 270 = W.",
+        "ejemplos": ["ui.set_value('{id}', 270)"],
+        "envia": "(solo on_update)",
+        "notas": [],
+    },
+    "NumberBox": {
+        "tipo": "Number",
+        "valores": "Cualquier número",
+        "desc": "Escribe el número en la caja de texto numérica.",
+        "ejemplos": ["ui.set_value('{id}', 3.14)"],
+        "envia": "on_value_change / on_update a número",
+        "notas": [],
+    },
+    "TextBox": {
+        "tipo": "String",
+        "valores": "Cualquier texto",
+        "desc": "Escribe el texto en la caja.",
+        "ejemplos": ["ui.set_value('{id}', 'Hola')"],
+        "envia": "on_value_change / on_update a string",
+        "notas": [],
+    },
+    "Label": {
+        "tipo": "String",
+        "valores": "Cualquier texto",
+        "desc": "Cambia el texto mostrado en la etiqueta.",
+        "ejemplos": ["ui.set_value('{id}', 'Temperatura: 25 °C')"],
+        "envia": "on_click a True",
+        "notas": ["Para cambiar color o forma usa ui.set_property(...), no set_value."],
+    },
+    "SevenSegment": {
+        "tipo": "Number o String de dígitos",
+        "valores": "Dígitos 0-9",
+        "desc": "Muestra el valor rellenando con ceros a la izquierda hasta el número de dígitos configurado. Si es más largo, conserva los últimos N dígitos.",
+        "ejemplos": ["ui.set_value('{id}', 1234)", "ui.set_value('{id}', '0042')"],
+        "envia": "(solo on_update)",
+        "notas": ["Solo se dibujan 0-9. Cualquier otro carácter (-, .) se muestra como 0."],
+    },
+    "StatusBar": {
+        "tipo": "Boolean o String",
+        "valores": "True / 'online' / 'true' = Online. Cualquier otro = Offline",
+        "desc": "Cambia el indicador entre Online (verde, pulsante) y Offline (rojo).",
+        "ejemplos": ["ui.set_value('{id}', 'online')", "ui.set_value('{id}', False)"],
+        "envia": "(ninguno)",
+        "notas": [],
+    },
+    "Keyboard": {
+        "soportado": False,
+        "desc": "Solo emite eventos. Envía el texto de la tecla (ej. 'A', 'SPACE', 'ENTER') en on_key_pressed.",
+        "envia": "on_key_pressed a string",
+    },
+    "Button": {
+        "soportado": False,
+        "desc": "Solo emite eventos. on_click envía True.",
+        "envia": "on_click a True",
+    },
+    "Clock": {"soportado": False, "desc": "Se actualiza solo con la hora del navegador.", "envia": "(solo on_update)"},
+    "VerticalContainer": {"soportado": False, "desc": "Contenedor de diseño. No recibe valores."},
+    "HorizontalContainer": {"soportado": False, "desc": "Contenedor de diseño. No recibe valores."},
+    "MatrixContainer": {"soportado": False, "desc": "Contenedor de diseño. No recibe valores."},
+    "Tabs": {"soportado": False, "desc": "No recibe valores."},
 }
 
 APP_PY = r'''
@@ -96,8 +217,12 @@ _running = set()
 class UIProxy:
     def __init__(self, sio):
         self.sio = sio
-        self._listeners = {} # <-- NUEVO
+        self._listeners = {}
+        self._values = {}
         
+    def get(self, widget_id, default=None):
+        """Último valor conocido del widget (o default si aún no hay)."""
+        return self._values.get(widget_id, default)
 
     def set_property(self, widget_id, prop_name, value):
         try:
@@ -113,6 +238,7 @@ class UIProxy:
         self.sio.emit('prop_update', {'id': widget_id, 'prop': prop_name, 'value': value})
 
     def set_value(self, widget_id, value):
+        self._values[widget_id] = value
         self.sio.emit('update', {'id': widget_id, 'value': value})
         dispatch(widget_id, 'on_update', value)
     
@@ -250,8 +376,11 @@ def index():
 
 @socketio.on('client_event')
 def handle_client_event(data):
-   print('[client_event] recibido:', data)
+   #print('[client_event] recibido:', data)
    dispatch(data.get('id'), data.get('event_name'), data.get('value'))
+@socketio.on('client_state')
+def handle_client_state(data):
+    ui_proxy._values[data.get('id')] = data.get('value')
 
 
 load_handlers()
@@ -265,9 +394,7 @@ PROP_VARS = [
     "color", "clock_type", "gauge_model", "btn_style", "led_style",
     "seg_digits", "seg_color", "toggle_on_text", "toggle_off_text",
     "toggle_on_color", "toggle_off_color", "label_bg_color",
-    "label_fg_color", "label_shape", "keyboard_rows", "plot_grid",
-    "plot_legend", "plot_xlabel", "plot_ylabel", "map_lat", "map_lng",
-    "map_zoom", "compass_heading", "knob_value", "prog_value", "tab_names",
+    "label_fg_color", "label_shape", "keyboard_rows","compass_heading", "knob_value", "prog_value", "tab_names",
 ]
 
 
@@ -416,6 +543,12 @@ class ScrollablePropContainer(tk.Frame):
         """Limpia todos los widgets hijos del contenedor interno."""
         for widget in self.inner_frame.winfo_children():
             widget.destroy()
+    
+    def set_bg(self, bg):
+        """Aplica el color de fondo a todas las capas del contenedor con scroll."""
+        self.config(bg=bg)
+        self.canvas.config(bg=bg)
+        self.inner_frame.config(bg=bg)
             
             
             
@@ -431,8 +564,8 @@ class WidgetItem:
         self.type = wtype
         self.x = x
         self.y = y
-        self.width = 380 if wtype == "Keyboard" else (350 if wtype in ["Map", "MatrixContainer"] else (300 if wtype in ["Plot", "VerticalContainer", "HorizontalContainer"] else (180 if wtype == "SevenSegment" else (160 if wtype in ["Gauge", "Clock", "Compass", "Knob"] else (140 if wtype in ["ToggleSwitch", "Label"] else (220 if wtype == "ProgressBar" else 160))))))
-        self.height = 200 if wtype == "Keyboard" else (250 if wtype in ["Map", "MatrixContainer"] else (200 if wtype in ["Plot", "VerticalContainer", "HorizontalContainer"] else (140 if wtype == "Tabs" else (70 if wtype in ["SevenSegment", "ToggleSwitch"] else (50 if wtype == "Label" else (160 if wtype in ["Gauge", "Clock", "Compass", "Knob"] else (50 if wtype == "ProgressBar" else 100)))))))
+        self.width = 380 if wtype == "Keyboard" else (350 if wtype in ["MatrixContainer"] else (300 if wtype in ["VerticalContainer", "HorizontalContainer"] else (180 if wtype == "SevenSegment" else (160 if wtype in ["Gauge", "Clock", "Compass", "Knob"] else (140 if wtype in ["ToggleSwitch", "Label"] else (220 if wtype == "ProgressBar" else 160))))))
+        self.height = 200 if wtype == "Keyboard" else (250 if wtype in ["MatrixContainer"] else (200 if wtype in ["VerticalContainer", "HorizontalContainer"] else (140 if wtype == "Tabs" else (70 if wtype in ["SevenSegment", "ToggleSwitch"] else (50 if wtype == "Label" else (160 if wtype in ["Gauge", "Clock", "Compass", "Knob"] else (50 if wtype == "ProgressBar" else 100)))))))
         self.label = wtype
         self.color = "#ef4444" if wtype == "LED" else ("#10b981" if wtype == "Button" else "#3b82f6")
         
@@ -454,13 +587,6 @@ class WidgetItem:
         self.label_shape = "Redondeada"
         
         self.keyboard_rows = "QWERTY" if wtype == "Keyboard" else ""
-        self.plot_grid = "True" if wtype == "Plot" else ""
-        self.plot_legend = "True" if wtype == "Plot" else ""
-        self.plot_xlabel = "Tiempo (s)" if wtype == "Plot" else ""
-        self.plot_ylabel = "Valor" if wtype == "Plot" else ""
-        self.map_lat = "20.6597" if wtype == "Map" else ""
-        self.map_lng = "-103.3496" if wtype == "Map" else ""
-        self.map_zoom = "13" if wtype == "Map" else ""
         self.compass_heading = "0 (N)" if wtype == "Compass" else ""
         self.knob_value = "50" if wtype == "Knob" else ""
         self.prog_value = "75" if wtype == "ProgressBar" else ""
@@ -469,27 +595,27 @@ class WidgetItem:
         self.attached_widgets = []
 
     def to_dict(self):
+        native = {
+            "label": self.label, "color": self.color,
+            "clock_type": self.clock_type, "gauge_model": self.gauge_model,
+            "btn_style": self.btn_style, "led_style": self.led_style,
+            "seg_digits": self.seg_digits, "seg_color": self.seg_color,
+            "toggle_on_text": self.toggle_on_text, "toggle_off_text": self.toggle_off_text,
+            "toggle_on_color": self.toggle_on_color, "toggle_off_color": self.toggle_off_color,
+            "label_bg_color": self.label_bg_color, "label_fg_color": self.label_fg_color,
+            "label_shape": self.label_shape,
+            "keyboard_rows": self.keyboard_rows,
+            "compass_heading": self.compass_heading, "knob_value": self.knob_value,
+            "prog_value": self.prog_value, "tab_names": self.tab_names,
+            "attached_widgets": self.attached_widgets,
+        }
+        # Las propiedades de plugins (img_release, etc.) ganan sobre las nativas
+        custom = getattr(self, "props", None) or {}
         return {
-            "id": self.id, "type": self.type, "x": self.x, "y": self.y, 
+            "id": self.id, "type": self.type, "x": self.x, "y": self.y,
             "width": self.width, "height": self.height,
-            "props": {
-                "label": self.label, "color": self.color, 
-                "clock_type": self.clock_type, "gauge_model": self.gauge_model,
-                "btn_style": self.btn_style, "led_style": self.led_style,
-                "seg_digits": self.seg_digits, "seg_color": self.seg_color,
-                "toggle_on_text": self.toggle_on_text, "toggle_off_text": self.toggle_off_text,
-                "toggle_on_color": self.toggle_on_color, "toggle_off_color": self.toggle_off_color,
-                "label_bg_color": self.label_bg_color, "label_fg_color": self.label_fg_color,
-                "label_shape": self.label_shape,
-                "keyboard_rows": self.keyboard_rows,
-                "plot_grid": self.plot_grid, "plot_legend": self.plot_legend,
-                "plot_xlabel": self.plot_xlabel, "plot_ylabel": self.plot_ylabel,
-                "map_lat": self.map_lat, "map_lng": self.map_lng, "map_zoom": self.map_zoom,
-                "compass_heading": self.compass_heading, "knob_value": self.knob_value,
-                "prog_value": self.prog_value, "tab_names": self.tab_names,
-                "attached_widgets": self.attached_widgets
-            }, 
-            "events": self.events
+            "props": {**native, **copy.deepcopy(custom)},
+            "events": self.events,
         }
 
 class IoTBuilderApp:
@@ -533,6 +659,7 @@ class IoTBuilderApp:
         self.root.bind_all("<Control-e>", lambda e: self.export_flask_project())
         self.root.bind_all("<Control-z>", lambda e: self.undo_action())
         self.root.bind_all("<Control-y>", lambda e: self.redo_action())
+        self.root.bind_all("<Control-n>", lambda e: self.new_project())
         self.root.bind_all("<Delete>", lambda e: self.safe_delete_selection())
         self.root.bind_all("<BackSpace>", lambda e: self.safe_delete_selection())
         self.root.bind_all("<Up>", self.navigate_widgets)
@@ -700,7 +827,7 @@ class IoTBuilderApp:
         # Solo eventos válidos para este tipo; onClick / on_action / "" se descartan
         w.events = {ev: ev for ev in w.events if ev in valid}
 
-        # Sin eventos válidos -> sin script
+        # Sin eventos válidos, sin script
         if not w.events:
             self.widget_event_codes.pop(w.id, None)
             return
@@ -742,9 +869,7 @@ class IoTBuilderApp:
                           'led_style', 'seg_digits', 'seg_color', 'toggle_on_text', 
                           'toggle_off_text', 'toggle_on_color', 'toggle_off_color', 
                           'label_bg_color', 'label_fg_color', 'label_shape', 
-                          'keyboard_rows', 'plot_grid', 'plot_legend', 'plot_xlabel', 
-                          'plot_ylabel', 'map_lat', 'map_lng', 'map_zoom', 
-                          'compass_heading', 'knob_value', 'prog_value', 'tab_names']
+                          'keyboard_rows', 'compass_heading', 'knob_value', 'prog_value', 'tab_names']
 
         for p in standard_props:
             var_name = f"var_{p}"
@@ -771,7 +896,9 @@ class IoTBuilderApp:
 
     def sync_widget_from_vars(self, w):
         for p in PROP_VARS:
-            setattr(w, p, getattr(self, f"var_{p}").get())
+            var = getattr(self, f"var_{p}", None)
+            if var is not None:
+                setattr(w, p, var.get())
 
     def load_custom_widgets_plugins(self):
         self.custom_widget_types.clear()
@@ -821,6 +948,18 @@ class IoTBuilderApp:
 
                             # Sincronizar automáticamente con el mapa global de eventos del builder
                             WIDGET_EVENTS_MAP[w_type_name] = widget_class.supported_events
+                            # Registrar la ayuda de set_value del plugin
+                            help_info = getattr(widget_class, "value_help", None)
+                            if callable(help_info):  # también acepta un staticmethod/classmethod
+                                try:
+                                    help_info = help_info()
+                                except Exception as ex:
+                                    print(f"[Error] value_help de {w_type_name}: {ex}")
+                                    help_info = None
+                            if isinstance(help_info, dict):
+                                WIDGET_VALUE_HELP[w_type_name] = help_info
+                            else:
+                                WIDGET_VALUE_HELP.pop(w_type_name, None)
                             break
 
                 except Exception as e:
@@ -847,53 +986,18 @@ class IoTBuilderApp:
         self.canvas.delete("all")
         self.widget_counter = 0
         self.selected_widgets.clear()
-        
+
         for item in state_list:
             w_type = item.get("type", "Button")
             w_id = item.get("id", f"w_{self.widget_counter}")
-            
-            # Buscar si es un widget personalizado (plugin)
-            target_cls = None
-            if hasattr(self, 'custom_widget_classes'):
-                for k, cls in self.custom_widget_classes.items():
-                    if k.lower() == w_type.lower():
-                        target_cls = cls
-                        break
 
-            if target_cls:
-                # Es un plugin personalizado: instanciamos y restauramos props
-                w = target_cls()
-                w.id = w_id
-                w.type = w_type
-                w.x = item.get("x", 50)
-                w.y = item.get("y", 50)
-                w.width = item.get("width", getattr(w, 'width', 300))
-                w.height = item.get("height", getattr(w, 'height', 150))
-                
-                saved_props = item.get("props", {})
-                if hasattr(w, 'default_props') and isinstance(w.default_props, dict):
-                    w.props = {**w.default_props, **saved_props}
-                else:
-                    w.props = saved_props
-                
-                w.events = item.get("events", {})
-            else:
-                # Es un widget nativo estándar
-                w = WidgetItem(w_id, w_type, item.get("x", 50), item.get("y", 50))
-                w.width = item.get("width", 140)
-                w.height = item.get("height", 50)
-                
-                props = item.get("props", {})
-                w.props = props
-                w.label = props.get("label", w.type)
-                w.color = props.get("color", w.color)
-                # ... (mantén aquí el resto de asignaciones de propiedades nativas que ya tenías) ...
-                w.events = item.get("events", {})
-            
+            # Maneja plugins y widgets nativos, y restaura todas sus propiedades
+            w = self._build_widget_from_dict({**item, "id": w_id, "type": w_type})
+
             self.widgets.append(w)
             self.draw_widget(w)
             self.widget_counter += 1
-            
+
         self.select_widget(None)
         self.refresh_scripts_list()
 
@@ -916,10 +1020,11 @@ class IoTBuilderApp:
         self.theme_menu = ttk.Combobox(self.toolbar, textvariable=self.theme_var, values=["light", "dark", "wii"], state="readonly", width=10)
         self.theme_menu.pack(side=tk.LEFT, padx=10)
         self.theme_menu.bind("<<ComboboxSelected>>", self.change_theme_event)
-
+        
+        tk.Button(self.toolbar, text="Nuevo", command=self.new_project, bg="#2563eb", fg="white", font=("Segoe UI", 9, "bold"), relief=tk.FLAT, cursor="hand2").pack(side=tk.LEFT, padx=3)
         tk.Button(self.toolbar, text="Guardar", command=self.save_project, bg="#2563eb", fg="white", font=("Segoe UI", 9, "bold"), relief=tk.FLAT, cursor="hand2").pack(side=tk.LEFT, padx=3)
         tk.Button(self.toolbar, text="Abrir", command=self.load_project, bg="#2563eb", fg="white", font=("Segoe UI", 9, "bold"), relief=tk.FLAT, cursor="hand2").pack(side=tk.LEFT, padx=3)
-        tk.Button(self.toolbar, text="+ Nuevo Widget Python", command=self.open_new_widget_dialog, bg="#8b5cf6", fg="white", font=("Segoe UI", 9, "bold"), relief=tk.FLAT, cursor="hand2").pack(side=tk.LEFT, padx=10)
+        tk.Button(self.toolbar, text="Nuevo Widget", command=self.open_new_widget_dialog, bg="#8b5cf6", fg="white", font=("Segoe UI", 9, "bold"), relief=tk.FLAT, cursor="hand2").pack(side=tk.LEFT, padx=10)
         self.btn_export = tk.Button(self.toolbar, text="Exportar Flask", command=self.export_flask_project, bg="#10b981", fg="white", font=("Segoe UI", 9, "bold"), relief=tk.FLAT, cursor="hand2")
         self.btn_export.pack(side=tk.RIGHT, padx=15, pady=8)
 
@@ -951,8 +1056,6 @@ class IoTBuilderApp:
             "Indicadores": ["LED", "Gauge", "SevenSegment", "StatusBar", "Clock", "Compass", "ProgressBar"],
             "Containers": ["VerticalContainer", "HorizontalContainer", "MatrixContainer", "Tabs"],
             "Texto y Visualizacion": ["Label"],
-            "Graficas": ["Plot"],
-            "IoT y Sensores": ["Map"],
             "Plugins": self.custom_widget_types
         }
 
@@ -979,13 +1082,12 @@ class IoTBuilderApp:
         
         self.var_label_bg_color, self.var_label_fg_color, self.var_label_shape = tk.StringVar(), tk.StringVar(), tk.StringVar()
 
-        self.var_keyboard_rows, self.var_plot_grid, self.var_plot_legend = tk.StringVar(), tk.StringVar(), tk.StringVar()
-        self.var_plot_xlabel, self.var_plot_ylabel, self.var_map_lat = tk.StringVar(), tk.StringVar(), tk.StringVar()
-        self.var_map_lng, self.var_map_zoom, self.var_compass_heading = tk.StringVar(), tk.StringVar(), tk.StringVar()
+        self.var_keyboard_rows = tk.StringVar()
+        self.var_compass_heading = tk.StringVar()
         self.var_knob_value, self.var_prog_value, self.var_tab_names = tk.StringVar(), tk.StringVar(), tk.StringVar()
 
         # Crear el contenedor con scroll en el panel derecho
-        self.prop_scroll = ScrollablePropContainer(self.right_panel)
+        self.prop_scroll = ScrollablePropContainer(self.right_panel, bg=t_init["panel"])
         self.prop_scroll.pack(fill=tk.BOTH, expand=True, padx=10)
         self.prop_container = self.prop_scroll.inner_frame
         self.build_inspector_fields()
@@ -1153,8 +1255,6 @@ class IoTBuilderApp:
                 "Tabs",
             ],
             "Texto y Visualizacion": ["Label"],
-            "Graficas": ["Plot"],
-            "IoT y Sensores": ["Map"],
             "Plugins": self.custom_widget_types,
         }
 
@@ -1264,25 +1364,117 @@ class IoTBuilderApp:
                 width, height = 180, 120
 
             filename = os.path.join(CUSTOM_WIDGETS_DIR, f"{wname.lower()}.py")
-            template_code = (
-                f"class {wname}:\n"
-                f"    def __init__(self, width={width}, height={height}):\n"
-                f"        self.width = width\n"
-                f"        self.height = height\n\n"
-                f"    def render_canvas(self, canvas, x, y):\n"
-                f"        box = canvas.create_rectangle(x, y, x + self.width, y + self.height, fill='#0f172a', outline='#38bdf8', width=2)\n"
-                f"        txt = canvas.create_text(x + self.width/2, y + self.height/2, text='{wname}', fill='#38bdf8', font=('Segoe UI', 10, 'bold'))\n"
-                f"        return [box, txt]\n\n"
-                f"    def render_html(self, w_id, props):\n"
-                f"        return f\"<div class='bg-slate-900 border border-cyan-500 rounded-xl flex items-center justify-center w-full h-full text-cyan-400 font-bold'>{{props.get('label', '{wname}')}}</div>\"\n"
-            )
+            template_code = '''import json
+import re
+
+class __NAME__:
+    default_props = {
+        "label": "__NAME__",
+        "color": "#38bdf8",
+    }
+
+    # Tipos: text, color, boolean, select (con "options"), file, table, custom
+    custom_properties = [
+        {"name": "label", "label": "Etiqueta:", "type": "text"},
+        {"name": "color", "label": "Color:", "type": "color"},
+    ]
+
+    # Eventos que el widget puede emitir (clic derecho > Connect)
+    supported_events = ["on_click"]
+
+    # Ayuda de clic derecho > Valores / Ayuda...
+    # Claves: soportado, tipo, valores, desc, ejemplos, envia, notas. {id} = ID real del widget.
+    value_help = {
+        "soportado": True,
+        "tipo": "String",
+        "valores": "Cualquier texto",
+        "desc": "Cambia el texto mostrado en el widget.",
+        "ejemplos": ["ui.set_value('{id}', 'Hola')"],
+        "envia": "on_click -> True",
+        "notas": [
+            "ui.set_property('{id}', 'color', '#ef4444') cambia el color.",
+        ],
+    }
+
+    def __init__(self, width=__W__, height=__H__):
+        self.width = width
+        self.height = height
+        self.props = self.default_props.copy()
+
+    def to_dict(self):
+        return {
+            "id": getattr(self, "id", "w_0"),
+            "type": getattr(self, "type", self.__class__.__name__),
+            "x": getattr(self, "x", 50),
+            "y": getattr(self, "y", 50),
+            "width": getattr(self, "width", 300),
+            "height": getattr(self, "height", 150),
+            "props": getattr(self, "props", {}),
+            "events": getattr(self, "events", {}),
+        }
+
+    def render_canvas(self, canvas, x, y):
+        color = str(self.props.get("color", self.default_props["color"]))
+        label = str(self.props.get("label", "__NAME__"))
+        box = canvas.create_rectangle(x, y, x + self.width, y + self.height,
+                                    fill="#0f172a", outline=color, width=2)
+        txt = canvas.create_text(x + self.width / 2, y + self.height / 2,
+                                text=label, fill=color, font=("Segoe UI", 10, "bold"))
+        return [box, txt]
+
+    def render_html(self, w_id, props):
+        p = {**self.default_props, **(props or {})}
+        safe_id = re.sub(r"\\W", "_", str(w_id))
+        cfg = json.dumps({
+            "id": str(w_id),
+            "label": str(p.get("label", "__NAME__")),
+            "color": str(p.get("color", "#38bdf8")),
+        })
+
+        return f"""
+<div id="w_{safe_id}"
+    class="w-full h-full flex items-center justify-center rounded-xl font-bold cursor-pointer select-none"
+    style="background:#0f172a; border:1px solid; overflow:hidden;"></div>
+
+<script>
+(function() {{
+    const cfg = {cfg};
+    const el = document.getElementById("w_{safe_id}");
+
+    function paint() {{
+        el.textContent = cfg.label;
+        el.style.color = cfg.color;
+        el.style.borderColor = cfg.color;
+    }}
+    paint();
+
+    // Registro para ui.set_value / ui.set_property desde Python
+    window.__widgets = window.__widgets || {{}};
+    window.__widgets[cfg.id] = {{
+        update: function(val) {{ cfg.label = String(val); paint(); }},
+        update_prop: function(prop, val) {{
+            if (prop === "label" || prop === "color") {{
+                cfg[prop] = String(val);
+                paint();
+            }}
+        }}
+    }};
+
+    el.addEventListener("click", () => emitEvent({{id: cfg.id}}, "on_click", true));
+}})();
+</script>
+"""
+'''
+            template_code = (template_code
+                             .replace("__NAME__", wname)
+                             .replace("__W__", str(width))
+                             .replace("__H__", str(height)))
             try:
                 with open(filename, "w", encoding="utf-8") as f:
                     f.write(template_code)
                 messagebox.showinfo("Exito", f"Widget creado en:\n{filename}")
                 diag.destroy()
 
-                # Recargar módulos de widgets y refrescar únicamente la lista lateral
                 self.load_custom_widgets_plugins()
                 self.refresh_widget_library()
             except Exception as ex:
@@ -1654,16 +1846,12 @@ class IoTBuilderApp:
             ent2.bind("<KeyRelease>", self.update_prop_live)
             tk.Button(fr2, text="Elegir", command=lambda: self.pick_color_var(self.var_label_fg_color)).pack(side=tk.RIGHT, padx=5)
 
-        if self.selected.type == "Map":
-            add_field("Latitud Inicial:", self.var_map_lat, self.update_prop_live)
-            add_field("Longitud Inicial:", self.var_map_lng, self.update_prop_live)
-            add_field("Zoom del Mapa:", self.var_map_zoom, self.update_prop_live)
         if self.selected.type == "Compass":
             add_field("Rumbo Inicial:", self.var_compass_heading, self.update_prop_live)
         if self.selected.type == "Knob":
             add_field("Valor Inicial:", self.var_knob_value, self.update_prop_live)
 
-        if self.selected.type in ["LED", "Button", "Gauge", "Plot", "ProgressBar", "Knob", "VerticalContainer", "HorizontalContainer", "MatrixContainer", "Compass"]:
+        if self.selected.type in ["LED", "Button", "Gauge", "ProgressBar", "Knob", "VerticalContainer", "HorizontalContainer", "MatrixContainer", "Compass"]:
             lbl = tk.Label(self.prop_container, text="Color Principal / Borde:", font=("Segoe UI", 9))
             lbl.pack(anchor=tk.W, pady=(5, 0))
             fr = tk.Frame(self.prop_container, bg=t["panel"])
@@ -1979,6 +2167,8 @@ class IoTBuilderApp:
         self.canvas_lib.config(bg=t["panel"])
         self.right_panel.config(bg=t["panel"])
         self.prop_container.config(bg=t["panel"])
+        if hasattr(self, "prop_scroll"):
+            self.prop_scroll.set_bg(t["panel"])
         self.canvas.config(bg=t["canvas"])
         
         # Etiquetas principales de los paneles
@@ -2199,25 +2389,28 @@ class IoTBuilderApp:
                 
             else:
                 moving_set = self.selected_widgets if len(self.selected_widgets) > 1 else [self.drag_data["item"]]
+                # Actualizar el punto de referencia ANTES de mover
+                self.drag_data["start_x"] = canvas_x
+                self.drag_data["start_y"] = canvas_y
+
                 for w in moving_set:
                     self.canvas.move(f"wid_{w.id}", dx, dy)
                     w.x += int(dx)
                     w.y += int(dy)
                     self.move_attached_children(w, dx, dy)
-                    
+
                 if self.selected:
                     self.var_x.set(self.selected.x)
                     self.var_y.set(self.selected.y)
-                    
-                self.drag_data["start_x"] = canvas_x
-                self.drag_data["start_y"] = canvas_y
                 
         elif self.selection_box:
             self.canvas.coords(self.selection_box, self.sel_start_x, self.sel_start_y, canvas_x, canvas_y)
 
     def move_attached_children(self, container_w, dx, dy):
-        if not container_w.attached_widgets: return
-        for child_id in container_w.attached_widgets:
+        attached = getattr(container_w, "attached_widgets", None)
+        if not attached:
+            return
+        for child_id in attached:
             child = next((cw for cw in self.widgets if cw.id == child_id), None)
             if child and child not in self.selected_widgets:
                 self.canvas.move(f"wid_{child.id}", dx, dy)
@@ -2297,13 +2490,86 @@ class IoTBuilderApp:
                 menu.add_command(label="Acoplar Widget (Attach)...", command=lambda tw=target_w: self.open_attach_dialog(tw))
                 menu.add_separator()
             
-            menu.add_command(label="Conectar / Remover Callback...", command=lambda tw=target_w: self.open_connect_dialog(tw))
+            menu.add_command(label="Eventos", command=lambda tw=target_w: self.open_connect_dialog(tw))
+            menu.add_command(label="Ayuda", command=lambda tw=target_w: self.open_values_help(tw))
             menu.add_separator()
-            menu.add_command(label="Copiar", command=self.copy_selection)
-            menu.add_command(label="Cortar", command=self.cut_selection)
+            menu.add_command(label="Duplicar", command=self.duplicate_selection)
             menu.add_command(label="Borrar", command=self.delete_selection)
             menu.tk_popup(event.x_root, event.y_root)
+    
+    
+    def open_values_help(self, w):
+        t = THEMES[self.current_theme]
+        info = WIDGET_VALUE_HELP.get(w.type)
+        cls = getattr(self, "custom_widget_classes", {}).get(w.type)
 
+        if info is None:
+            info = {
+                "desc": "Este widget personalizado no declara ayuda. Agrega un atributo de clase "
+                        "`value_help` al plugin para verla aquí.",
+            }
+
+        diag = tk.Toplevel(self.root)
+        diag.title(f"Valores - {w.id}")
+        diag.geometry("560x480")
+        diag.config(bg=t["panel"])
+        diag.transient(self.root)
+
+        tk.Label(diag, text=f"{w.type}  ({w.id})", font=("Segoe UI", 12, "bold"),
+                 bg=t["panel"], fg=t["accent"]).pack(anchor=tk.W, padx=15, pady=(12, 0))
+        tk.Label(diag, text="Ayuda de ui.set_value()", font=("Segoe UI", 9),
+                 bg=t["panel"], fg=t["fg"]).pack(anchor=tk.W, padx=15, pady=(0, 8))
+
+        txt = scrolledtext.ScrolledText(diag, wrap=tk.WORD, font=("Consolas", 10),
+                                        bg=t["bg"], fg=t["fg"], relief=tk.FLAT,
+                                        highlightthickness=0, padx=10, pady=10)
+        txt.pack(fill=tk.BOTH, expand=True, padx=15, pady=5)
+        txt.tag_config("h", foreground=t["accent"], font=("Consolas", 10, "bold"))
+        txt.tag_config("code", foreground="#10b981")
+        txt.tag_config("warn", foreground="#f59e0b")
+
+        def section(title, body, tag=None):
+            txt.insert(tk.END, title + "\n", "h")
+            txt.insert(tk.END, body + "\n\n", tag or ())
+
+        examples = [e.replace("{id}", w.id) for e in info.get("ejemplos", [])]
+
+        if info.get("soportado") is False:
+            section("Soporte", "Este widget NO acepta ui.set_value().", "warn")
+        if info.get("tipo"):
+            section("Tipo de dato", info["tipo"])
+        if info.get("valores"):
+            section("Valores válidos", info["valores"])
+        if info.get("desc"):
+            section("Descripción", info["desc"])
+        if examples:
+            section("Ejemplos", "\n".join(examples), "code")
+        if info.get("envia"):
+            section("Eventos que emite (navegador a Python)", info["envia"])
+
+        evs = WIDGET_EVENTS_MAP.get(w.type)
+        if evs:
+            section("Eventos disponibles para Connect", ", ".join(evs))
+
+        if info.get("notas"):
+            section("Notas", "\n".join("- " + n for n in info["notas"]), "warn")
+
+        txt.config(state=tk.DISABLED)
+
+        def copy_examples():
+            if examples:
+                diag.clipboard_clear()
+                diag.clipboard_append("\n".join(examples))
+
+        btns = tk.Frame(diag, bg=t["panel"])
+        btns.pack(fill=tk.X, padx=15, pady=10)
+        if examples:
+            tk.Button(btns, text="Copiar ejemplo", command=copy_examples, bg="#2563eb", fg="white",
+                      font=("Segoe UI", 9, "bold"), relief=tk.FLAT, cursor="hand2").pack(side=tk.LEFT)
+        tk.Button(btns, text="Cerrar", command=diag.destroy, bg=t["border"], fg=t["fg"],
+                  font=("Segoe UI", 9), relief=tk.FLAT, cursor="hand2").pack(side=tk.RIGHT)
+    
+    
     def detach_widget(self, child, parent):
         self.save_state()
         if child.id in parent.attached_widgets:
@@ -2517,15 +2783,9 @@ class IoTBuilderApp:
         elif w.type == "ProgressBar":
             self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#234764", outline=t["border"], width=1, tags=(tag, bg_tag))
             self.canvas.create_text(w.x + w.width/2, w.y + w.height/2, text=f"{w.type}", fill="#FFFFFF", font=("Segoe UI", 9, "bold"), tags=(tag,))
-        elif w.type == "Plot":
-            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#090d16", width=2, tags=(tag, bg_tag))
-            self.canvas.create_text(w.x + w.width/2, w.y + w.height/2, text=f"{w.type}", fill="#38bdf8", font=("Segoe UI", 9, "bold"), tags=(tag,))
         elif w.type == "Tabs":
             self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#234764", width=2, tags=(tag, bg_tag))
             self.canvas.create_text(w.x + w.width/2, w.y + w.height/2, text=t_names[0], fill="#ffffff", font=("Segoe UI", 8, "bold"), tags=(tag,))
-        elif w.type == "Map":
-            self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#234764", width=2, tags=(tag, bg_tag))
-            self.canvas.create_text(w.x + w.width/2, w.y + w.height/2, text=f"{w.type}", fill="#38bdf8", font=("Segoe UI", 11, "bold"), tags=(tag,))
         elif w.type == "Compass":
             self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#234764", width=2, tags=(tag, bg_tag))
             self.canvas.create_text(w.x + w.width/2, w.y + w.height/2, text=f"{w.type}", fill="#FFFFFF", font=("Segoe UI", 9, "bold"), tags=(tag,))
@@ -2538,15 +2798,15 @@ class IoTBuilderApp:
         elif w.type == "VerticalContainer":
             self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#234764", outline=w.color if w.color else "#334155", width=2, tags=(tag, bg_tag))
             self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+28, fill="#234764", outline="", tags=(tag,))
-            self.canvas.create_text(w.x + w.width/2, w.y + w.height/2, text=f"{w.type}: {w.label}", fill="#FFFFFF", font=("Segoe UI", 9, "bold"), anchor="w", tags=(tag,))
+            self.canvas.create_text(w.x + w.width/2, w.y + w.height/2, text=f"{w.type}", fill="#FFFFFF", font=("Segoe UI", 9, "bold"), tags=(tag,))
         elif w.type == "HorizontalContainer":
             self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#234764", outline=w.color if w.color else "#334155", width=2, tags=(tag, bg_tag))
             self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+28, fill="#234764", outline="", tags=(tag,))
-            self.canvas.create_text(w.x + w.width/2, w.y + w.height/2, text=f"{w.type}: {w.label}", fill="#FFFFFF", font=("Segoe UI", 9, "bold"), anchor="w", tags=(tag,))
+            self.canvas.create_text(w.x + w.width/2, w.y + w.height/2, text=f"{w.type}", fill="#FFFFFF", font=("Segoe UI", 9, "bold"), tags=(tag,))
         elif w.type == "MatrixContainer":
             self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+w.height, fill="#234764", outline=w.color if w.color else "#334155", width=2, tags=(tag, bg_tag))
             self.canvas.create_rectangle(w.x, w.y, w.x+w.width, w.y+28, fill="#234764", outline="", tags=(tag,))
-            self.canvas.create_text(w.x + w.width/2, w.y + w.height/2, text=f"{w.type}: {w.label}", fill="#FFFFFF", font=("Segoe UI", 9, "bold"), anchor="w", tags=(tag,))
+            self.canvas.create_text(w.x + w.width/2, w.y + w.height/2, text=f"{w.type}", fill="#FFFFFF", font=("Segoe UI", 9, "bold"), tags=(tag,))
         
         elif w.type in self.custom_widget_types or (hasattr(self, 'custom_widget_classes') and w.type in self.custom_widget_classes):
             try:
@@ -2729,15 +2989,127 @@ class IoTBuilderApp:
                 except Exception:
                     pass
 
-    def copy_selection(self):
-        if self.selected_widgets:
-            self.clipboard = [copy.deepcopy(w.to_dict()) for w in self.selected_widgets]
-            messagebox.showinfo("Copiado", f"Se copiaron {len(self.clipboard)} widgets.")
 
-    def cut_selection(self):
-        if self.selected_widgets:
-            self.copy_selection()
-            self.delete_selection()
+
+    def _build_widget_from_dict(self, item):
+        """Crea un widget (nativo o plugin) a partir de un dict de to_dict()."""
+        w_type = item.get("type", "Button")
+        props = item.get("props", {})
+
+        target_cls = None
+        for k, cls in getattr(self, "custom_widget_classes", {}).items():
+            if k.lower() == w_type.lower():
+                target_cls = cls
+                break
+
+        if target_cls:
+            w = target_cls()
+            w.id, w.type = item["id"], w_type
+            w.x, w.y = item.get("x", 50), item.get("y", 50)
+            w.width = item.get("width", getattr(w, "width", 300))
+            w.height = item.get("height", getattr(w, "height", 150))
+            defaults = copy.deepcopy(getattr(w, "default_props", {}))
+            w.props = {**defaults, **copy.deepcopy(props)}
+        else:
+            w = WidgetItem(item["id"], w_type, item.get("x", 50), item.get("y", 50))
+            w.width = item.get("width", 140)
+            w.height = item.get("height", 50)
+            for p in ["label", "color"] + PROP_VARS:
+                if p in props:
+                    setattr(w, p, props[p])
+            w.attached_widgets = list(props.get("attached_widgets", []))
+            w.props = copy.deepcopy(props)
+
+        w.events = copy.deepcopy(item.get("events", {}))
+        return w
+
+    def duplicate_selection(self, event=None):
+        # Si viene del atajo, no actuar cuando se está escribiendo en un campo
+        if event is not None:
+            try:
+                if isinstance(self.root.focus_get(), (tk.Entry, ttk.Entry, tk.Text, ttk.Combobox, tk.Listbox)):
+                    return
+            except Exception:
+                return
+
+        sources = list(self.selected_widgets) or ([self.selected] if self.selected else [])
+        if not sources:
+            return
+
+        # Sincronizar el código del editor antes de copiarlo
+        if self.editing_wid and self.editing_wid in self.widget_event_codes:
+            self.widget_event_codes[self.editing_wid] = self.code_editor.get("1.0", tk.END)
+
+        # Incluir los hijos de los contenedores seleccionados
+        ordered = []
+        def collect(w):
+            if w in ordered:
+                return
+            ordered.append(w)
+            for cid in (getattr(w, "attached_widgets", None) or []):
+                child = next((c for c in self.widgets if c.id == cid), None)
+                if child:
+                    collect(child)
+        for w in sources:
+            collect(w)
+
+        self.save_state()
+        OFFSET = 30
+
+        # IDs nuevos únicos
+        used = {w.id for w in self.widgets}
+        id_map = {}
+        for w in ordered:
+            while True:
+                new_id = f"{w.type.lower()}_{self.widget_counter}"
+                self.widget_counter += 1
+                if new_id not in used:
+                    break
+            used.add(new_id)
+            id_map[w.id] = new_id
+
+        new_widgets = []
+        for w in ordered:
+            item = copy.deepcopy(w.to_dict())
+            item["id"] = id_map[w.id]
+            item["x"] = item.get("x", 0) + OFFSET
+            item["y"] = item.get("y", 0) + OFFSET
+            props = item.setdefault("props", {})
+            props["attached_widgets"] = [id_map[c] for c in props.get("attached_widgets", []) if c in id_map]
+
+            nw = self._build_widget_from_dict(item)
+            self.widgets.append(nw)
+            self.draw_widget(nw)
+            new_widgets.append(nw)
+
+            # Duplicar también el script de eventos
+            code = self.widget_event_codes.get(w.id)
+            if code is not None and nw.events:
+                self.widget_event_codes[nw.id] = code.replace(
+                    f"# Controlador para el widget: {w.id}",
+                    f"# Controlador para el widget: {nw.id}",
+                )
+
+        # Reacomodar contenedores (dibuja a los hijos encima)
+        for nw in new_widgets:
+            if nw.type in ["VerticalContainer", "HorizontalContainer", "MatrixContainer"]:
+                self.update_container_layout(nw)
+
+        # Seleccionar las copias de lo que el usuario había seleccionado
+        tops = [next(nw for nw, ow in zip(new_widgets, ordered) if ow is s) for s in sources]
+        if len(tops) == 1:
+            self.select_widget(tops[0])
+        else:
+            self.select_widget(None)
+            self.selected_widgets = tops
+            for nw in tops:
+                self.canvas.itemconfig(f"bg_{nw.id}", outline="#3b82f6", width=2)
+        self.scroll_to_widget(tops[-1])
+
+        self.refresh_scripts_list()
+        self.unsaved_changes = True
+
+
 
     def delete_selection(self):
         if self.selected_widgets:
@@ -2763,7 +3135,44 @@ class IoTBuilderApp:
             messagebox.showinfo("Guardado Local", f"Codigo del archivo events/{self.editing_wid}.py sincronizado.")
         else:
             messagebox.showwarning("Atencion", "No hay ningun archivo activo en el editor.")
+    
+    def new_project(self):
+        # Preguntar si hay cambios sin guardar
+        if self.unsaved_changes:
+            res = messagebox.askyesnocancel(
+                "Nuevo proyecto",
+                "Tienes cambios sin guardar. ¿Deseas guardarlos antes de crear un proyecto nuevo?",
+                parent=self.root
+            )
+            if res is None:      # Cancelar
+                return
+            if res is True:      # Sí: guardar primero
+                self.save_project()
+                # Si sigue habiendo cambios, el usuario canceló el diálogo de guardado
+                if self.unsaved_changes:
+                    return
 
+        # Limpiar el estado del proyecto
+        self.widgets.clear()
+        self.canvas.delete("all")
+        self.selected = None
+        self.selected_widgets = []
+        self.widget_counter = 0
+        self.widget_event_codes = {}
+        self.editing_wid = None
+        self.undo_stack.clear()
+        self.redo_stack.clear()
+        self.current_file_path = None
+        self.pending_type = None
+        self.root.config(cursor="")
+        self.drag_data = {"item": None, "start_x": 0, "start_y": 0, "mode": "move"}
+        self.selection_box = None
+
+        # Refrescar la interfaz (limpia inspector y editor de código)
+        self.select_widget(None)
+        self.refresh_scripts_list()
+        self.unsaved_changes = False
+    
     def save_project(self):
         if self.editing_wid and self.editing_wid in self.widget_event_codes:
             self.widget_event_codes[self.editing_wid] = self.code_editor.get("1.0", tk.END)
@@ -2953,7 +3362,7 @@ class IoTBuilderApp:
 
         const project = """ + project_json + """;
         const canvas = document.getElementById('canvas');
-        const activeCharts = {}; const activeMaps = {};
+        const activeCharts = {};
 
         function getDigitPos(ch) {
             if (ch === '0') return { col: 4, row: 1 };
@@ -3046,10 +3455,6 @@ class IoTBuilderApp:
                 innerHTML += `<label class="flex items-center gap-2 cursor-pointer font-semibold text-sm"><input id="el_${w.id}" type="checkbox" class="w-5 h-5 accent-blue-600 rounded cursor-pointer"> ${props.label}</label>`;
             } else if (w.type === 'TextBox' || w.type === 'NumberBox') {
                 innerHTML += `<input id="el_${w.id}" type="${w.type === 'NumberBox' ? 'number' : 'text'}" placeholder="${props.label}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors">`;
-            } else if (w.type === 'Plot') {
-                innerHTML += `<div class="w-full h-full bg-slate-900 border border-slate-800 rounded-xl p-2 flex flex-col shadow-lg"><canvas id="chart_${w.id}" class="w-full h-full"></canvas></div>`;
-            } else if (w.type === 'Map') {
-                innerHTML += `<div id="map_${w.id}" class="w-full h-full rounded-xl border border-slate-800 shadow-2xl z-10"></div>`;
             } else if (w.type === 'Knob') {
                 innerHTML += `<div class="w-full h-full bg-slate-900 border border-slate-800 rounded-xl flex flex-col items-center justify-center shadow-lg relative select-none">
                                 <span class="absolute left-4 text-xs font-bold text-slate-400">0</span>
@@ -3233,20 +3638,6 @@ class IoTBuilderApp:
             if (w.type === 'Keyboard') {
                 wrapper.querySelectorAll('button').forEach(btn => {
                     btn.addEventListener('click', e => emitEvent(w, 'on_key_pressed', e.target.innerText));
-                });
-            }
-            if (w.type === 'Map') {
-                let lat = parseFloat(props.map_lat) || 20.6597; let lng = parseFloat(props.map_lng) || -103.3496; let zoom = parseInt(props.map_zoom) || 13;
-                let map = L.map(`map_${w.id}`).setView([lat, lng], zoom);
-                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
-                activeMaps[w.id] = map;
-            } else if (w.type === 'Plot') {
-                const ctx = document.getElementById(`chart_${w.id}`).getContext('2d');
-                let plotColor = props.color || '#3b82f6';
-                activeCharts[w.id] = new Chart(ctx, {
-                    type: 'line',
-                    data: { labels: ['0s', '1s', '2s', '3s', '4s', '5s'], datasets: [{ label: props.label || 'Sensor', data: [12, 19, 3, 5, 2, 3], borderColor: plotColor, fill: true, tension: 0.4 }] },
-                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: props.plot_legend !== 'False', labels: { color: '#94a3b8' } } }, scales: { x: { grid: { color: '#334155' }, ticks: { color: '#94a3b8' } }, y: { grid: { color: '#334155' }, ticks: { color: '#94a3b8' } } } }
                 });
             }
         });
