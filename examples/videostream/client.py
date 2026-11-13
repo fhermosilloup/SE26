@@ -1,14 +1,17 @@
-import socket, struct, cv2
+import socket, struct, cv2, time
 
 # Socket
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-sockdest = ("192.168.1.13", 5000)
+sockdest = ("192.168.1.6", 5000)
 
 # Camera
 cap = cv2.VideoCapture(0)
-#cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-#cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))   # datos crudos de cámara: JPEG
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+cap.set(cv2.CAP_PROP_CONVERT_RGB, 0)                            # opencv entrega datos crudos de la cámara
+
 _, frame = cap.read()
 print(frame.shape)
 
@@ -20,11 +23,8 @@ while True:
     if not ret:
         break
     
-    # Compression
-    _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-    
     # Packets
-    data = buf.tobytes()
+    data = frame.tobytes()
     chunks = [data[i:i+CHUNK_SIZE] for i in range(0, len(data), CHUNK_SIZE)]
     total_packets = len(chunks)
     
@@ -33,3 +33,4 @@ while True:
         header = struct.pack("!IHH", frame_id, packet_id, total_packets)
         sock.sendto(header + packet, sockdest)
     frame_id = (frame_id + 1) & 0xFFFFFFFF
+
