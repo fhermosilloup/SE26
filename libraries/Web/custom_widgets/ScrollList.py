@@ -45,19 +45,7 @@ class ScrollList:
         }
         
     def render_canvas(self, canvas, x, y):
-        # Marco exterior
         box = canvas.create_rectangle(x, y, x + self.width, y + self.height, fill='#234764', outline='#1f2937', width=2)
-        # Tres tambores separados
-        # gap = 4
-        # col_w = (self.width - 12 - gap * 2) / 3
-        # for i in range(3):
-            # cx = x + 6 + i * (col_w + gap)
-            # canvas.create_rectangle(cx, y + 6, cx + col_w, y + self.height - 6, fill='#e5e5e5', outline='#111111', width=2)
-        # Franja de selección
-        # pill = canvas.create_rectangle(x + 6, y + self.height / 2 - 18, x + self.width - 6, y + self.height / 2 + 18, fill='', outline='#ffffff', width=2)
-        # Texto de vista previa
-        # txt_d = canvas.create_text(x + self.width / 6, y + self.height / 2, text='14', fill='#38a1ff', font=('Segoe UI', 11, 'bold'))
-        # txt_m = canvas.create_text(x + self.width / 2, y + self.height / 2, text='April', fill='#38a1ff', font=('Segoe UI', 11, 'bold'))
         txt_a = canvas.create_text(x + (self.width / 2), y + self.height / 2, text='ScrollList', fill='#ffffff', font=('Segoe UI', 11, 'bold'))
         return [box, txt_a]
 

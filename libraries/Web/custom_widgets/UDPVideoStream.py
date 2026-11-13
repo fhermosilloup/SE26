@@ -27,13 +27,15 @@ class UDPVideoStream:
         {"name": "show_controls", "label": "Mostrar controles:", "type": "boolean"},
         {"name": "placeholder", "label": "Mensaje sin señal:", "type": "text"}
     ]
-    supported_events = ["on_video_click"]
-    # El estado se crea por instancia de servidor al registrar el plugin.
+    
+    # Añadimos on_frame_received a los eventos soportados
+    supported_events = ["on_video_click", "on_frame_received"]
+
     @staticmethod
     def register_backend(app, socketio, project_data):
         lock = threading.RLock()
-        streams = {}  # (port, sender_ip, stream_id) -> contexto
-        by_port = {}  # port -> clave activa; el protocolo no lleva stream_id
+        streams = {}
+        by_port = {}
         def send_status(sid, ok, message, **extra):
             payload = {"ok": ok, "message": message, **extra}
             socketio.emit("udp_stream_status", payload, to=sid)
@@ -72,13 +74,11 @@ class UDPVideoStream:
                     now = time.monotonic()
                     try:
                         packet, addr = udp.recvfrom(65535)
-                        #print(f"[UDPStream] Recibido desde :{addr} el paquete de {len(packet)}")
                     except socket.timeout:
                         packet = None
                         addr = None
                     except OSError:
                         break
-                    # Filtrado por IP de origen configurada en el widget.
                     if packet and addr and addr[0] != ctx["sender_ip"]:
                         continue
                     for fid in list(pending):
@@ -115,15 +115,9 @@ class UDPVideoStream:
                     jpeg = b"".join(frame["parts"][i] for i in range(total))
                     del pending[frame_id]
                     
-                    # print(f"[UDPStream] Frame completo: {frame_id}, " f"paquetes={total}, bytes={len(jpeg)}")
                     if len(jpeg) < 4 or not jpeg.startswith(b"\xff\xd8") or not jpeg.endswith(b"\xff\xd9"):
-                        print("[UDPStream] JPEG demasiado pequeño")
                         continue
-                    if not jpeg.startswith(b"\xff\xd8"):
-                        print("[UDPStream] JPEG sin marcador SOI")
-                        continue
-                    if not jpeg.endswith(b"\xff\xd9"):
-                        print("[UDPStream] JPEG sin marcador EOI")
+                    if not jpeg.startswith(b"\xff\xd8") or not jpeg.endswith(b"\xff\xd9"):
                         continue
                     
                     if last_emitted is not None and not newer(frame_id, last_emitted):
@@ -134,7 +128,7 @@ class UDPVideoStream:
                     metadata = {"stream_id": ctx["stream_id"], "frame_id": frame_id}
                     for sid in recipients:
                         try:
-                            socketio.emit("video_frame", (metadata, jpeg), to=sid )
+                            socketio.emit("video_frame", (metadata, jpeg), to=sid)
                         except Exception as exc:
                             print(f"[UDPStream] Error Socket.IO: {exc}")
             finally:
@@ -145,10 +139,10 @@ class UDPVideoStream:
                         streams.pop(key, None)
                         by_port.pop(port, None)
                 print(f"[UDPStream] Receptor detenido en UDP :{port}")
+
         def connect_udp_stream(data):
             from flask import request
             sid = request.sid
-            print(f"[UDPStream] Cliente conectado al stream: {sid}")
             data = data or {}
             try:
                 port = int(data.get("udp_port", 5000))
@@ -166,8 +160,7 @@ class UDPVideoStream:
             with lock:
                 active_key = by_port.get(port)
                 if active_key is not None and active_key != key:
-                    send_status(sid, False,
-                                f"El puerto UDP {port} ya está siendo utilizado por otra configuración.")
+                    send_status(sid, False, f"El puerto UDP {port} ya está siendo utilizado por otra configuración.")
                     return
                 ctx = streams.get(key)
                 if ctx is None:
@@ -179,11 +172,9 @@ class UDPVideoStream:
                     }
                     streams[key] = ctx
                     by_port[port] = key
-                    # threading.Thread(target=receiver, args=(ctx,), name=f"UDPStream-{port}", daemon=True).start()
                     socketio.start_background_task(receiver, ctx)
                 ctx["clients"].add(sid)
             
-            # Espera breve para confirmar que bind() fue posible.
             ctx["ready"].wait(timeout=2.0)
             if ctx.get("error"):
                 with lock:
@@ -209,12 +200,10 @@ class UDPVideoStream:
                 if ctx:
                     ctx["clients"].discard(sid)
                     if not ctx["clients"]:
-                        # recvfrom tiene timeout de 250 ms; el hilo cerrará el socket.
                         ctx["stop"].set()
             send_status(sid, True, "Desconectado.", stream_id=stream_id, udp_port=port)
         socketio.on_event("udpstream_connect", connect_udp_stream)
         socketio.on_event("udpstream_disconnect", disconnect_udp_stream)
-        print("[UDPStream] Eventos dinámicos registrados: udpstream_connect / udpstream_disconnect")
         
     def __init__(self, width=520, height=320):
         self.width, self.height = width, height
@@ -291,24 +280,19 @@ class UDPVideoStream:
 #video_{w_id} .video-header {{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;min-height:28px;flex-shrink:0;}}
 #video_{w_id} .video-title {{font-size:13px;font-weight:600;}}
 #video_{w_id} .video-status {{font-size:11px;color:#f59e0b;white-space:nowrap;}}
-#video_{w_id} .video-container {{position:relative;flex:1;min-height:0;overflow:hidden;background:#020617;display:flex;align-items:center;justify-content:center;}}
+#video_{w_id} .video-container {{position:relative;flex:1;min-height:0;overflow:hidden;background:#020617;display:flex;align-items:center;justify-content:center;cursor:pointer;}}
 #video_{w_id} .video-frame {{width:100%;height:100%;object-fit:{p['object_fit'].lower()};display:none;}}
 #video_{w_id} .video-placeholder {{position:absolute;color:#64748b;font-size:13px;text-align:center;padding:12px;pointer-events:none;}}
 #video_{w_id} .video-footer {{display:flex;justify-content:space-between;padding:5px 10px;font-size:10px;color:#94a3b8;flex-shrink:0;}}
 @media (max-width:420px) {{ #video_{w_id} .video-connection {{align-items:stretch;flex-direction:column;}} #video_{w_id} .video-connect-btn {{width:100%;}}}}
 </style>
 <script>
-console.log("[UDPStream] Script cargado");
 (function() {{
   const cfg = {cfg_json};
   const root = document.getElementById("video_" + cfg.id);
   if (!root || root.dataset.initialized === "1") return;
   root.dataset.initialized = "1";
   const socket = window.dashboardSocket;
-  
-  
-  console.log("[UDPStream] Inicializando widget:", cfg.stream_id);
-  console.log("[UDPStream] dashboardSocket:", window.dashboardSocket);
   
   const btn = root.querySelector(".video-connect-btn");
   const status = root.querySelector(".video-status");
@@ -319,71 +303,78 @@ console.log("[UDPStream] Script cargado");
   const title = root.querySelector(".video-title");
   const ipInput = root.querySelector(".video-ip-input");
   const portInput = root.querySelector(".video-port-input");
+
   title.textContent = cfg.label || "";
   ipInput.value = cfg.sender_ip || "";
   portInput.value = String(cfg.udp_port || 5000);
   placeholder.textContent = cfg.placeholder || "Esperando video...";
+  
   root.querySelector(".video-connection").style.display = cfg.show_controls ? "flex" : "none";
   root.querySelector(".video-header").style.display = cfg.show_header ? "flex" : "none";
   status.style.display = cfg.show_status ? "inline" : "none";
   root.querySelector(".video-footer").style.display = (cfg.show_fps || cfg.show_timestamp) ? "flex" : "none";
   fpsLabel.style.display = cfg.show_fps ? "inline" : "none";
   timestamp.style.display = cfg.show_timestamp ? "inline" : "none";
+
   let connected = false, connecting = false, gotFrame = false, destroyed = false, lastUrl = null;
+  let isPaused = false; // Bandera para pausar/reanudar transferencia visual y procesamiento
   let activeConfig = null, frameCount = 0, fpsStart = performance.now(), frameTimer = null, waitTimer = null;
+
   function setStatus(msg, color) {{ status.textContent = msg; status.style.color = color; }}
+  
   function clearFrame() {{
     img.style.display = "none"; placeholder.style.display = "block";
     if (lastUrl) {{ URL.revokeObjectURL(lastUrl); lastUrl = null; }}
     img.removeAttribute("src");
   }}
+
   function setInputsLocked(locked) {{ ipInput.disabled = locked; portInput.disabled = locked; }}
-  function showFrame(data) {{
-    if (!data || destroyed) return;
-    const blob = data instanceof Blob ? data : new Blob([data], {{type:"image/jpeg"}});
-    const url = URL.createObjectURL(blob), previous = lastUrl; lastUrl = url;
-    img.onload = function() {{
-      if (destroyed) {{ URL.revokeObjectURL(url); return; }}
-      img.style.display = "block"; placeholder.style.display = "none";
-      if (previous) URL.revokeObjectURL(previous);
-    }};
-    img.onerror = function() {{ if (lastUrl === url) lastUrl = null; URL.revokeObjectURL(url); }};
-    img.src = url;
-    const now = performance.now(); frameCount++;
-    if (now - fpsStart >= 1000) {{
-      fpsLabel.textContent = (frameCount * 1000 / (now - fpsStart)).toFixed(1) + " FPS";
-      frameCount = 0; fpsStart = now;
-    }}
-    if (cfg.show_timestamp) timestamp.textContent = new Date().toLocaleTimeString();
-  }}
+
   function handleFrame(data, frame) {{
-    console.log("[UDPStream] Evento recibido:", data);
-    console.log("[UDPStream] Tipo de frame:", typeof frame);
-    console.log("[UDPStream] Constructor:", frame?.constructor?.name);
-    console.log("[UDPStream] Tamaño:", frame?.byteLength ?? frame?.length);
-    if (!connected || !data || !activeConfig ||
-        data.stream_id !== cfg.stream_id) {{
-        console.warn("[UDPStream] Frame descartado por configuración");
-        return;
-    }}
+    if (!connected || !data || !activeConfig || data.stream_id !== cfg.stream_id) return;
     const jpeg = frame || data.frame;
-    if (!jpeg) {{
-        console.warn("[UDPStream] No llegó el JPEG");
-        return;
-    }}
-    console.log("[UDPStream] JPEG recibido correctamente");
+    if (!jpeg) return;
+
     gotFrame = true;
     clearTimeout(waitTimer);
-    setStatus("● Online", "#22c55e");
-    showFrame(jpeg);
+
+    if (!isPaused) {{
+      setStatus("● Online", "#22c55e");
+      showFrame(jpeg);
+    }} else {{
+      setStatus("● Pausado", "#f59e0b");
+    }}
+
+    // Convertir el frame (Blob o ArrayBuffer) a Base64 para enviarlo a Python
+    const blob = jpeg instanceof Blob ? jpeg : new Blob([jpeg], {type: "image/jpeg"});
+    const reader = new FileReader();
+    reader.onload = function() {{
+      const base64Data = reader.result.split(',')[1]; // Remover el prefijo data:image/jpeg;base64,
+
+      if (typeof emitEvent === "function") {{
+        emitEvent(
+          {{ id: cfg.id }},
+          "on_frame_received",
+          {{
+            stream_id: cfg.stream_id,
+            frame_id: data.frame_id,
+            timestamp: Date.now(),
+            image_base64: base64Data  // <-- Aquí viaja la imagen capturada
+          }}
+        );
+      }}
+    }};
+    reader.readAsDataURL(blob);
+
     clearTimeout(frameTimer);
     frameTimer = setTimeout(function() {{
-        if (connected) {{
-            setStatus("● Sin señal", "#ef4444");
-            clearFrame();
-        }}
+      if (connected && !isPaused) {{
+        setStatus("● Sin señal", "#ef4444");
+        clearFrame();
+      }}
     }}, 5000);
-}}
+  }}
+
   function handleStatus(data) {{
     if (!data) return;
     if (data.stream_id && data.stream_id !== cfg.stream_id) return;
@@ -408,6 +399,7 @@ console.log("[UDPStream] Script cargado");
       setStatus("● Desconectado", "#94a3b8");
     }}
   }}
+
   function connect() {{
     if (!socket || typeof socket.emit !== "function") {{ setStatus("● Socket.IO no disponible", "#ef4444"); return; }}
     const ip = ipInput.value.trim();
@@ -418,39 +410,55 @@ console.log("[UDPStream] Script cargado");
     connecting = true; btn.disabled = true; setStatus("● Conectando...", "#f59e0b");
     socket.emit("udpstream_connect", activeConfig);
   }}
+
   function disconnect() {{
     if (!socket || typeof socket.emit !== "function" || !activeConfig) return;
     btn.disabled = true; setStatus("● Desconectando...", "#f59e0b");
     socket.emit("udpstream_disconnect", activeConfig);
   }}
+
   if (socket && typeof socket.on === "function") {{
-    console.log("[UDPStream] Registrando listeners");
-    console.log("[UDPStream] Socket ID:", socket.id);
-    console.log("[UDPStream] Estado inicial:", socket.connected);
-    socket.on("connect", function() {{
-        console.log("[UDPStream] Conectado:", socket.id);
-    }});
-    socket.on("disconnect", function(reason) {{
-        console.warn("[UDPStream] Desconectado:", reason);
-    }});
     socket.on("video_frame", function(data, frame) {{
-        console.log("[UDPStream] Evento video_frame recibido");
-        handleFrame(data, frame);
+      handleFrame(data, frame);
     }});
     socket.on("udp_stream_status", function(data) {{
-        console.log("[UDPStream] Evento udp_stream_status recibido:", data);
-        handleStatus(data);
+      handleStatus(data);
     }});
-    socket.on("video_frame_test", function(data) {{
-        console.log("[UDPStream] Evento de prueba recibido:", data);
-    }});
-}} else {{
-    console.error("[UDPStream] dashboardSocket no disponible");
-}}
-  btn.addEventListener("click", function() {{ if (connected) disconnect(); else if (!connecting) connect(); }});
-  root.querySelector(".video-container").addEventListener("click", function() {{
-    if (typeof emitEvent === "function") emitEvent({{id:cfg.id,events:{{on_video_click:true}}}}, "on_video_click", {{stream_id:cfg.stream_id,udp_port:activeConfig ? activeConfig.udp_port : Number(portInput.value)}});
+  }}
+
+  btn.addEventListener("click", function() {{ 
+    if (connected) disconnect(); 
+    else if (!connecting) connect(); 
   }});
+
+  // Evento 1: Clic en la imagen para Pausar / Reanudar la transferencia visual
+  root.querySelector(".video-container").addEventListener("click", function(e) {{
+    // Evita conflictos si se da clic en controles internos
+    if (e.target.closest(".video-connect-btn") || e.target.closest(".video-config")) return;
+
+    if (connected) {{
+      isPaused = !isPaused;
+      if (isPaused) {{
+        setStatus("● Pausado", "#f59e0b");
+      }} else {{
+        setStatus("● Online", "#22c55e");
+      }}
+    }}
+
+    // Emite el evento de clic validando permisos del builder
+    if (typeof emitEvent === "function") {{
+      emitEvent(
+        {{ id: cfg.id }},
+        "on_video_click",
+        {{
+          stream_id: cfg.stream_id,
+          paused: isPaused,
+          udp_port: activeConfig ? activeConfig.udp_port : Number(portInput.value)
+        }}
+      );
+    }}
+  }});
+
   window.__widgets = window.__widgets || {{}};
   window.__widgets[cfg.id] = {{
     update: function(v) {{
@@ -468,4 +476,4 @@ console.log("[UDPStream] Script cargado");
   }};
 }})();
 </script>
-""" 
+"""

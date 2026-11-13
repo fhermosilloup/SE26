@@ -26,6 +26,33 @@ class TimerEvent:
     ]
 
     supported_events = ["on_timer"]
+    
+    value_help = {
+        "soportado": True,
+        "tipo": "Dict o String JSON",
+        "valores": "{'action': 'start' | 'stop', 'period_ms': int >= 1}",
+        "desc": "Temporizador que corre en el navegador y emite el evento on_timer cada "
+                "'period_ms' milisegundos. Desde Python puedes iniciarlo, detenerlo o cambiar "
+                "su periodo. Ambas claves son opcionales y se pueden combinar.",
+        "ejemplos": [
+            "ui.set_value('{id}', {'action': 'start'})",
+            "ui.set_value('{id}', {'action': 'stop'})",
+            "ui.set_value('{id}', {'period_ms': 500})",
+            "ui.set_value('{id}', {'period_ms': 2000, 'action': 'start'})",
+            "ui.set_property('{id}', 'period_ms', 250)",
+        ],
+        "envia": "on_timer a {'period_ms': int, 'timestamp': milisegundos Unix}",
+        "notas": [
+            "Debes conectar el evento on_timer (clic derecho > Connect) para recibir los ticks.",
+            "Ejemplo de handler: def on_timer(context): ts = context['value']['timestamp']",
+            "Un número suelto (ej. 500) se ignora. Manda siempre un Dict: {'period_ms': 500}.",
+            "Si cambias 'period_ms' con el timer corriendo, se reinicia con el nuevo periodo.",
+            "Un periodo no numérico o menor a 1 se rechaza con error en la consola del navegador.",
+            "'Iniciar automáticamente' solo se lee al cargar la página.",
+            "El timer vive en el navegador: solo emite mientras haya una pestaña abierta, y cada pestaña abierta emite sus propios ticks.",
+            "El widget es invisible en el dashboard exportado.",
+        ],
+    }
 
     def __init__(self, width=1, height=1):
         self.width = width

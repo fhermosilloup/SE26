@@ -45,6 +45,40 @@ class PlotLive:
     ]
 
     supported_events = []
+    
+    value_help = {
+        "soportado": True,
+        "tipo": "Número, lista, Dict o String JSON",
+        "valores": "Número | [y1, y2, ...] | [[x, y], ...] | [x, y] | Dict con 'value'/'y', 'values' o 'series'",
+        "desc": "Grafica series de líneas. Un número se agrega como nuevo punto de la serie "
+                "'default' (eje X automático 1, 2, 3...). Con Dict puedes usar varias series "
+                "(cada una con su 'series_id'), reemplazar los datos completos, agregar varios "
+                "puntos o limpiar la gráfica. Cada serie puede tener 'label', 'color' y 'fill'.",
+        "ejemplos": [
+            "ui.set_value('{id}', 23.5)",
+            "ui.set_value('{id}', [10, 12, 15, 11])",
+            "ui.set_value('{id}', [['10:00', 20], ['10:01', 22]])",
+            "ui.set_value('{id}', ['10:02', 24])",
+            "ui.set_value('{id}', {'series_id': 'temp', 'value': 25, 'x': '10:03', 'label': 'Temperatura', 'color': '#ef4444'})",
+            "ui.set_value('{id}', {'series_id': 'hum', 'action': 'append_many', 'values': [40, 42, 41], 'labels': ['a', 'b', 'c']})",
+            "ui.set_value('{id}', {'series_id': 'temp', 'action': 'set_series', 'values': [1, 2, 3]})",
+            "ui.set_value('{id}', {'series': [{'id': 'a', 'values': [1, 2, 3], 'color': '#3b82f6'}, {'id': 'b', 'values': [3, 2, 1], 'color': '#10b981'}]})",
+            "ui.set_value('{id}', {'action': 'clear_series', 'series_id': 'temp'})",
+            "ui.set_value('{id}', {'action': 'clear_all'})",
+        ],
+        "envia": "(ninguno, supported_events está vacío)",
+        "notas": [
+            "Claves de Dict: series_id (por defecto 'default'), value o y, x, values, labels, label, color, fill, action.",
+            "Acciones: set_series, append_many, clear_series, clear_all. Con 'clear': True también se limpia todo.",
+            "Una lista de exactamente 2 elementos [x, y] se interpreta como UN punto. Para fijar una serie de 2 valores usa {'values': [a, b]}.",
+            "Si agregas un punto con 'value' y 'label' pero sin 'x', el 'label' también se usa como etiqueta del eje X. Manda 'x' explícito.",
+            "Solo se conservan los últimos 'Máx. de puntos visibles' (por defecto 50); los más viejos se descartan.",
+            "Valores no numéricos se grafican como hueco (null).",
+            "Un string se interpreta como JSON; si no lo es, se intenta convertir a número.",
+            "ui.set_property('{id}', 'plot_color', '#ef4444') cambia el color de la serie 'default'.",
+            "Propiedades que se actualizan en vivo: label, plot_color, show_legend, fill_area, y_min, y_max, max_points.",
+        ],
+    }
 
     def __init__(self, width=360, height=220):
         self.width = width

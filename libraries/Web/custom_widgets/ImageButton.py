@@ -53,6 +53,16 @@ class ImageButton:
     ]
 
     supported_events = ["on_click"]
+    
+    value_help = {
+        "soportado": False,
+        "desc": "Botón con imágenes de reposo, presionado y hover. Solo emite eventos; "
+                "no recibe valores desde Python.",
+        "envia": "on_click a True",
+        "notas": [
+            "Las imágenes se configuran en el inspector (se incrustan en Base64 al exportar).",
+        ],
+    }
 
     def __init__(self, width=100, height=60):
         self.width = width
@@ -68,7 +78,8 @@ class ImageButton:
             return ""
 
         path = str(path)
-
+        print(path)
+        
         # Ya es una URL o data URI
         if path.startswith(("http://", "https://", "data:", "/")):
             return path

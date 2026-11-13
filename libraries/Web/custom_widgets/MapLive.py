@@ -33,6 +33,33 @@ class MapLive:
     ]
 
     supported_events = []
+    
+    value_help = {
+        "soportado": True,
+        "tipo": "Dict, lista de Dict o String JSON",
+        "valores": "{'lat': float, 'lon': float}  (lat -90..90, lon -180..180)",
+        "desc": "Agrega un punto a la trayectoria (línea punteada), mueve el marcador a esa "
+                "posición y centra el mapa en ella. Acepta un punto, varios puntos a la vez "
+                "con 'points' o una lista directa. Las claves de longitud pueden ser 'lon', "
+                "'lng' o 'longitude', y las de latitud 'lat' o 'latitude'.",
+        "ejemplos": [
+            "ui.set_value('{id}', {'lat': 20.6597, 'lon': -103.3496})",
+            "ui.set_value('{id}', {'latitude': 20.67, 'longitude': -103.35})",
+            "ui.set_value('{id}', [{'lat': 20.66, 'lon': -103.34}, {'lat': 20.67, 'lon': -103.35}])",
+            "ui.set_value('{id}', {'points': [{'lat': 20.66, 'lon': -103.34}]})",
+            "ui.set_value('{id}', '{\"lat\": 20.66, \"lon\": -103.34}')",
+        ],
+        "envia": "(ninguno, supported_events está vacío)",
+        "notas": [
+            "Coordenadas inválidas (fuera de rango o no numéricas) se ignoran sin error.",
+            "Un punto idéntico al anterior no se agrega.",
+            "Se conservan solo los últimos 'Máximo de puntos' (por defecto 1000).",
+            "Si el mensaje llega antes de que cargue el mapa (Leaflet), se encola y se aplica al iniciar.",
+            "ui.set_property('{id}', 'plot_color', '#ef4444') cambia el color de la trayectoria.",
+            "ui.set_property('{id}', 'zoom', 17) cambia el zoom.",
+            "Otras propiedades (label, latitude, longitude, show_marker, max_points) solo se leen al cargar.",
+        ],
+    }
 
     def __init__(self, width=360, height=260):
         self.width = width
