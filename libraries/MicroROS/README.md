@@ -1,4 +1,4 @@
-# MicroROSEducativo (prototipo)
+# MicroROS
 
 Wrapper  para `micro_ros_arduino` versión Jazzy.
 
